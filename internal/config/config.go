@@ -10,14 +10,17 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 )
 
 type Config struct {
-	Env         string // "development" | "production"
-	HTTPPort    string
-	DatabaseURL string
-	RedisURL    string
-	LogLevel    slog.Level
+	Env            string // "development" | "production"
+	HTTPPort       string
+	DatabaseURL    string
+	RedisURL       string
+	LogLevel       slog.Level
+	JWTSecret      string
+	AccessTokenTTL time.Duration
 }
 
 // Load membaca env dan mengembalikan error kalau ada yang wajib tapi kosong.
@@ -34,7 +37,14 @@ func Load() (Config, error) {
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		RedisURL:    env("REDIS_URL", "redis://localhost:6379/0"),
 		LogLevel:    parseLevel(env("LOG_LEVEL", "info")),
+		JWTSecret:   os.Getenv("JWT_SECRET"),
 	}
+
+	ttl, err := time.ParseDuration(env("ACCESS_TOKEN_TTL", "15m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("ACCESS_TOKEN_TTL tidak valid: %w", err)
+	}
+	cfg.AccessTokenTTL = ttl
 
 	// Dikumpulkan dulu semuanya, baru dilaporkan sekaligus. Melaporkan satu
 	// per satu memaksa orang menjalankan ulang program berkali-kali untuk
@@ -42,6 +52,9 @@ func Load() (Config, error) {
 	var missing []string
 	if cfg.DatabaseURL == "" {
 		missing = append(missing, "DATABASE_URL")
+	}
+	if cfg.JWTSecret == "" {
+		missing = append(missing, "JWT_SECRET")
 	}
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("env wajib belum diisi: %s", strings.Join(missing, ", "))

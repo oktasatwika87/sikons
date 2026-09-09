@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/oktasatwika/sikons/internal/auth"
 	"github.com/oktasatwika/sikons/internal/config"
 	"github.com/oktasatwika/sikons/internal/db"
 	"github.com/oktasatwika/sikons/internal/server"
@@ -57,9 +58,19 @@ func run() error {
 
 	log.Info("terhubung ke database")
 
+	tokens, err := auth.NewTokenIssuer(cfg.JWTSecret, cfg.AccessTokenTTL)
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
-		Addr:    ":" + cfg.HTTPPort,
-		Handler: server.New(cfg, pool, log).Routes(),
+		Addr: ":" + cfg.HTTPPort,
+		Handler: server.New(cfg, server.Deps{
+			DB:     pool,
+			Auth:   auth.NewService(pool, tokens),
+			Tokens: tokens,
+			Log:    log,
+		}).Routes(),
 
 		// Tanpa timeout ini, satu klien yang membuka koneksi lalu diam saja
 		// bisa menahan resource selamanya. Default net/http adalah "tanpa
