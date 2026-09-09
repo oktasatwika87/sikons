@@ -2,16 +2,16 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
-
-	"context"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/oktasatwika/sikons/internal/auth"
+	"github.com/oktasatwika/sikons/internal/availability"
 	"github.com/oktasatwika/sikons/internal/config"
 )
 
@@ -24,11 +24,12 @@ import (
 // pakai global, test tidak bisa lagi menjalankan dua konfigurasi berbeda
 // secara paralel, dan tidak ada yang bisa menukar db dengan versi palsu.
 type Server struct {
-	cfg    config.Config
-	db     DB
-	auth   *auth.Service
-	tokens *auth.TokenIssuer
-	log    *slog.Logger
+	cfg          config.Config
+	db           DB
+	auth         *auth.Service
+	tokens       *auth.TokenIssuer
+	log          *slog.Logger
+	availability *availability.Service
 }
 
 // Deps dikumpulkan dalam satu struct, bukan dijadikan parameter berjejer.
@@ -38,10 +39,11 @@ type Server struct {
 // signature New dan memaksa semua pemanggil — termasuk setiap test — ikut
 // diedit. Dengan struct, penambahan field tidak merusak apa pun yang sudah ada.
 type Deps struct {
-	DB     DB
-	Auth   *auth.Service
-	Tokens *auth.TokenIssuer
-	Log    *slog.Logger
+	DB           DB
+	Auth         *auth.Service
+	Tokens       *auth.TokenIssuer
+	Log          *slog.Logger
+	Availability *availability.Service
 }
 
 // DB sengaja didefinisikan di SINI, di package yang MEMAKAINYA, bukan di
@@ -62,11 +64,12 @@ type DB interface {
 
 func New(cfg config.Config, deps Deps) *Server {
 	return &Server{
-		cfg:    cfg,
-		db:     deps.DB,
-		auth:   deps.Auth,
-		tokens: deps.Tokens,
-		log:    deps.Log,
+		cfg:          cfg,
+		db:           deps.DB,
+		auth:         deps.Auth,
+		tokens:       deps.Tokens,
+		log:          deps.Log,
+		availability: deps.Availability,
 	}
 }
 
@@ -105,6 +108,18 @@ func (s *Server) Routes() http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
 			r.Get("/me", s.handleMe)
+
+			// Aturan ketersediaan — milik dosen, butuh role lecturer.
+			r.Group(func(r chi.Router) {
+				r.Use(s.requireRole(auth.RoleLecturer))
+				r.Post("/availability-rules", s.handleCreateAvailabilityRule)
+				r.Get("/availability-rules", s.handleListAvailabilityRules)
+				r.Patch("/availability-rules/{id}", s.handleUpdateAvailabilityRule)
+				r.Delete("/availability-rules/{id}", s.handleDeleteAvailabilityRule)
+				r.Post("/availability-exceptions", s.handleCreateAvailabilityException)
+				r.Get("/availability-exceptions", s.handleListAvailabilityExceptions)
+				r.Delete("/availability-exceptions/{id}", s.handleDeleteAvailabilityException)
+			})
 		})
 	})
 

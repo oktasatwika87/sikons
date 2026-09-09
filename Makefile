@@ -51,6 +51,9 @@ migrate-new: ## Buat file migrasi baru: make migrate-new name=tambah_sesuatu
 run: ## Jalankan API server
 	go run ./cmd/api
 
+seed: ## Isi database dengan data demo (akun admin, dosen, mahasiswa)
+	go run ./cmd/seed
+
 # Database uji TERPISAH dari database development. Test membersihkan tabel
 # dengan TRUNCATE di awal tiap test — kalau diarahkan ke database dev, data
 # percobaanmu ikut hilang setiap kali test jalan.

@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/oktasatwika/sikons/internal/auth"
+	"github.com/oktasatwika/sikons/internal/availability"
 	"github.com/oktasatwika/sikons/internal/config"
 )
 
@@ -87,10 +88,11 @@ func serverLengkap(t *testing.T) http.Handler {
 	}
 
 	return New(config.Config{Env: "test"}, Deps{
-		DB:     pool,
-		Auth:   auth.NewService(pool, tokens, slog.New(slog.NewTextHandler(io.Discard, nil))),
-		Tokens: tokens,
-		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:           pool,
+		Auth:         auth.NewService(pool, tokens, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		Tokens:       tokens,
+		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Availability: availability.NewService(pool),
 	}).Routes()
 }
 

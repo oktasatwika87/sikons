@@ -2,10 +2,11 @@
 .env
 *.pem
 
-# Hasil build
+# Hasil build — binary hasil `go build`, jangan sampai ikut ter-commit
 /bin/
 /tmp/
-sikons
+/sikons
+/seed
 
 # Go
 *.test
