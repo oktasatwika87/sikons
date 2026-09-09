@@ -13,6 +13,7 @@ import (
 
 	"github.com/oktasatwika/sikons/internal/auth"
 	"github.com/oktasatwika/sikons/internal/availability"
+	"github.com/oktasatwika/sikons/internal/booking"
 	"github.com/oktasatwika/sikons/internal/config"
 	"github.com/oktasatwika/sikons/internal/db"
 	"github.com/oktasatwika/sikons/internal/server"
@@ -68,11 +69,12 @@ func run() error {
 	srv := &http.Server{
 		Addr: ":" + cfg.HTTPPort,
 		Handler: server.New(cfg, server.Deps{
-			DB:           pool,
+			Pool:         pool,
 			Auth:         auth.NewService(pool, tokens, log),
 			Tokens:       tokens,
 			Log:          log,
 			Availability: availability.NewService(pool),
+			Booking:      booking.NewService(pool, cfg.BookingMinLeadMin),
 			Slotgen:      slotgen.New(pool, cfg.CampusTZ, cfg.SlotHorizonDays),
 		}).Routes(),
 

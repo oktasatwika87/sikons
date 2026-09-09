@@ -22,18 +22,22 @@ const DefaultMaxActiveBookings = 3
 // 409 dan ErrSlotNotFound ke 404. Kalau pembedanya adalah string pesan, maka
 // memperbaiki typo di pesan error diam-diam mengubah status code API.
 var (
-	ErrSlotNotFound      = errors.New("slot tidak ditemukan")
-	ErrSlotAlreadyBooked = errors.New("slot sudah dipesan")
+	ErrSlotNotFound       = errors.New("slot tidak ditemukan")
+	ErrSlotAlreadyBooked  = errors.New("slot sudah dipesan")
 	ErrSlotWithdrawn     = errors.New("slot sudah tidak tersedia")
-	ErrStudentNotFound   = errors.New("mahasiswa tidak ditemukan")
-	ErrLimitReached      = errors.New("batas booking aktif tercapai")
+	ErrStudentNotFound    = errors.New("mahasiswa tidak ditemukan atau tidak aktif")
+	ErrLimitReached       = errors.New("batas booking aktif tercapai")
+	ErrSlotTooSoon       = errors.New("jarak tempuh booking terlalu pendek")
+	ErrIdempotencyReused = errors.New("idempotency key dipakai ulang dengan isi berbeda")
 )
 
 type CreateInput struct {
-	SlotID      string
-	StudentID   string
-	Topic       string
-	Description string
+	SlotID           string
+	StudentID        string
+	Topic            string
+	Description      string
+	IdempotencyKey   string
+	RequestHash      string
 }
 
 type Booking struct {

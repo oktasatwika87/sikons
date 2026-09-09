@@ -9,93 +9,71 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/oktasatwika/sikons/internal/auth"
 	"github.com/oktasatwika/sikons/internal/availability"
+	"github.com/oktasatwika/sikons/internal/booking"
 	"github.com/oktasatwika/sikons/internal/config"
 	"github.com/oktasatwika/sikons/internal/slotgen"
 )
+
+// Pool mendefinisikan akses database yang dipakai di package ini.
+// *pgxpool.Pool dan *pgxpool.Tx memenuhi interface ini.
+type Pool interface {
+	Ping(ctx context.Context) error
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 // Server memegang semua dependency handler. Ini pola dependency injection
 // paling sederhana di Go: tidak ada framework, tidak ada container, tidak ada
 // variabel global. Handler adalah method dari struct ini, jadi otomatis
 // kebagian akses ke db dan log.
-//
-// Kenapa bukan variabel global seperti `var DB *pgxpool.Pool`? Karena begitu
-// pakai global, test tidak bisa lagi menjalankan dua konfigurasi berbeda
-// secara paralel, dan tidak ada yang bisa menukar db dengan versi palsu.
 type Server struct {
 	cfg          config.Config
-	db           DB
+	db           Pool
 	auth         *auth.Service
 	tokens       *auth.TokenIssuer
 	log          *slog.Logger
 	availability *availability.Service
+	booking      *booking.Service
 	slotgen      *slotgen.Service
 	slotHorizon  int // hari, untuk rekonsiliasi
 }
 
 // Deps dikumpulkan dalam satu struct, bukan dijadikan parameter berjejer.
-//
-// Alasannya praktis: tiap milestone menambah satu dependency baru (booking di
-// M3, notifikasi di M4). Dengan parameter berjejer, setiap penambahan mengubah
-// signature New dan memaksa semua pemanggil — termasuk setiap test — ikut
-// diedit. Dengan struct, penambahan field tidak merusak apa pun yang sudah ada.
 type Deps struct {
-	DB           DB
+	Pool         Pool
 	Auth         *auth.Service
 	Tokens       *auth.TokenIssuer
 	Log          *slog.Logger
 	Availability *availability.Service
+	Booking      *booking.Service
 	Slotgen      *slotgen.Service
-}
-
-// DB sengaja didefinisikan di SINI, di package yang MEMAKAINYA, bukan di
-// package db yang menyediakannya. Ini kebiasaan Go yang berbeda dari Java/C#:
-// interface milik konsumen, bukan produsen.
-//
-// Akibatnya bagus dua-duanya:
-//   - package server tidak perlu mengimpor pgx sama sekali
-//   - test bisa menyodorkan DB palsu yang sengaja gagal, tanpa Postgres
-//
-// *pgxpool.Pool memenuhi interface ini tanpa perlu mendeklarasikan apa pun —
-// di Go, sebuah tipe memenuhi interface cukup dengan punya method-nya.
-// Interface ini akan tumbuh seiring kebutuhan, tapi tetap sesempit mungkin:
-// makin banyak method di interface, makin susah dibuat palsunya saat test.
-type DB interface {
-	Ping(ctx context.Context) error
 }
 
 func New(cfg config.Config, deps Deps) *Server {
 	return &Server{
 		cfg:          cfg,
-		db:           deps.DB,
+		db:           deps.Pool,
 		auth:         deps.Auth,
 		tokens:       deps.Tokens,
 		log:          deps.Log,
 		availability: deps.Availability,
+		booking:      deps.Booking,
 		slotgen:      deps.Slotgen,
 		slotHorizon:  cfg.SlotHorizonDays,
 	}
 }
 
 // Routes mengembalikan http.Handler, bukan *chi.Mux.
-//
-// http.Handler adalah interface dengan satu method: ServeHTTP. Mengembalikan
-// interface, bukan tipe konkretnya, berarti pemanggil tidak bisa bergantung
-// pada chi secara diam-diam — kalau suatu saat router-nya diganti, tidak ada
-// kode lain yang ikut berubah. Ini kebiasaan yang sangat khas Go: terima
-// interface, kembalikan struct — kecuali saat interface-nya memang kontrak
-// yang ingin kamu tegakkan, seperti di sini.
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(s.requestLogger)
-	// Recoverer menangkap panic di dalam handler supaya satu bug tidak
-	// mematikan seluruh proses. Diletakkan SETELAH logger supaya panic-nya
-	// tetap tercatat lengkap dengan request id-nya.
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
@@ -103,19 +81,15 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/readyz", s.handleReadyz)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// Terbuka untuk umum.
 		r.Post("/auth/register", s.handleRegister)
 		r.Post("/auth/login", s.handleLogin)
 		r.Post("/auth/refresh", s.handleRefresh)
 		r.Post("/auth/logout", s.handleLogout)
 
-		// Butuh access token. Group membuat middleware hanya berlaku untuk
-		// rute di dalamnya — rute publik di atas tidak ikut terkena.
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
 			r.Get("/me", s.handleMe)
 
-			// Aturan ketersediaan — milik dosen, butuh role lecturer.
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireRole(auth.RoleLecturer))
 				r.Post("/availability-rules", s.handleCreateAvailabilityRule)
@@ -126,6 +100,13 @@ func (s *Server) Routes() http.Handler {
 				r.Get("/availability-exceptions", s.handleListAvailabilityExceptions)
 				r.Delete("/availability-exceptions/{id}", s.handleDeleteAvailabilityException)
 			})
+
+			r.Group(func(r chi.Router) {
+				r.Use(s.requireRole(auth.RoleStudent))
+				r.Post("/bookings", s.handleCreateBooking)
+			})
+			r.Get("/bookings", s.handleListBookings)
+			r.Get("/bookings/{id}", s.handleGetBooking)
 		})
 	})
 

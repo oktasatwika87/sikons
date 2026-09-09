@@ -10,20 +10,31 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/oktasatwika/sikons/internal/config"
 )
 
-// dbPalsu memenuhi interface DB. Tidak ada library mocking, tidak ada code
-// generation — cukup struct kecil dengan method yang sama. Inilah untungnya
-// interface yang sempit.
+// dbPalsu memenuhi interface Pool. Tidak ada library mocking, tidak ada code
+// generation — cukup struct kecil dengan method yang sama.
 type dbPalsu struct{ err error }
 
 func (d dbPalsu) Ping(context.Context) error { return d.err }
+func (d dbPalsu) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return nil, d.err
+}
+func (d dbPalsu) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	return rowPalsu{err: d.err}
+}
 
-func serverUji(db DB) *Server {
+type rowPalsu struct{ err error }
+
+func (rowPalsu) Scan(dst ...any) error { return rowPalsu{}.err }
+
+func serverUji(db Pool) *Server {
 	return New(config.Config{Env: "test"}, Deps{
-		DB:  db,
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Pool: db,
+		Log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 }
 
@@ -34,9 +45,8 @@ func panggil(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {
 	return rec
 }
 
-// db sengaja nil: kalau /healthz suatu saat diam-diam menyentuh database,
-// test ini akan panic. Jadi test ini bukan cuma memeriksa status 200, tapi
-// juga menjaga keputusan "liveness tidak boleh bergantung pada database".
+// /healthz tidak menyentuh database: ini pilihan desain, bukan kebetulan.
+// Kalau /healthz suatu saat diam-diam menyentuh database, test ini akan panic.
 func TestHealthzTidakMenyentuhDatabase(t *testing.T) {
 	rec := panggil(t, serverUji(nil), "/healthz")
 
@@ -76,8 +86,6 @@ func TestReadyzBalas503SaatDatabaseMati(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("body bukan JSON: %v", err)
 	}
-	// Bentuk amplop error harus sama di seluruh API, termasuk di endpoint
-	// infrastruktur seperti ini.
 	if got.Error.Code != "DATABASE_UNAVAILABLE" {
 		t.Errorf("code = %q, mau DATABASE_UNAVAILABLE", got.Error.Code)
 	}
