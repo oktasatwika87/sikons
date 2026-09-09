@@ -19,13 +19,20 @@ curl localhost:8080/healthz   # {"status":"ok"}
 curl localhost:8080/readyz    # {"status":"ready"}
 ```
 
+Test:
+
+```bash
+make test-db     # sekali saja: bikin database uji + migrasinya
+make test        # semua test, termasuk 100 request paralel ke slot yang sama
+```
+
 `make help` menampilkan semua perintah.
 
 ## Status
 
 - [x] M1 — kerangka repo, Docker Compose, skema database
 - [ ] M2 — auth + RBAC
-- [ ] M3 — ketersediaan, generator slot, booking + concurrency test
+- [~] M3 — booking + locking + concurrency test selesai; ketersediaan & generator slot menyusul
 - [ ] M4 — cancel, worker reminder
 - [ ] M5–M6 — frontend
 - [ ] M7 — CI + deploy

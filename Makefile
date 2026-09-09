@@ -8,7 +8,7 @@
 -include .env
 export
 
-.PHONY: help up down reset logs psql migrate-up migrate-down migrate-version migrate-new run test test-cover tidy fmt vet
+.PHONY: help up down reset logs psql migrate-up migrate-down migrate-version migrate-new test-db run test test-unit test-concurrency test-cover tidy fmt vet
 
 help: ## Tampilkan daftar perintah
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -51,8 +51,23 @@ migrate-new: ## Buat file migrasi baru: make migrate-new name=tambah_sesuatu
 run: ## Jalankan API server
 	go run ./cmd/api
 
-test: ## Jalankan semua test
+# Database uji TERPISAH dari database development. Test membersihkan tabel
+# dengan TRUNCATE di awal tiap test — kalau diarahkan ke database dev, data
+# percobaanmu ikut hilang setiap kali test jalan.
+test-db: ## Siapkan database uji (sekali saja, atau setelah `make reset`)
+	-docker compose exec -T postgres psql -U sikons -d postgres -c "CREATE DATABASE sikons_test"
+	docker compose run --rm --entrypoint migrate migrate \
+		-path=/migrations \
+		-database="postgres://sikons:sikons_dev@postgres:5432/sikons_test?sslmode=disable" up
+
+test: ## Semua test (integrasi ikut jalan kalau TEST_DATABASE_URL diisi)
 	go test ./... -race -count=1
+
+test-unit: ## Test unit saja — cepat, tidak butuh Docker
+	TEST_DATABASE_URL= go test ./... -race -count=1
+
+test-concurrency: ## Hanya test perebutan slot, dengan output verbose
+	go test ./internal/booking -race -count=1 -v -run 'Paralel|Sepuluh'
 
 test-cover: ## Test + laporan coverage di browser
 	go test ./... -race -coverprofile=coverage.out
