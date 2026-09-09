@@ -267,6 +267,29 @@ func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
 	}
 }
 
+// TestCreate_SlotDitarik tidak boleh dipesan.
+func TestCreate_SlotDitarik(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji)
+
+	slot := buatSlot(t, dosen, 72*time.Hour)
+
+	// Tarik slotnya
+	_, err := poolUji.Exec(context.Background(),
+		`UPDATE slots SET withdrawn_at = now() WHERE id = $1::uuid`, slot)
+	if err != nil {
+		t.Fatalf("menarik slot: %v", err)
+	}
+
+	// Pesan — harus gagal dengan ErrSlotWithdrawn
+	_, err = svc.Create(context.Background(),
+		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "coba"})
+	if !errors.Is(err, ErrSlotWithdrawn) {
+		t.Fatalf("err = %v, mau ErrSlotWithdrawn", err)
+	}
+}
+
 // ---------------------------------------------------------------- concurrency
 
 // INI TEST TERPENTING DI SELURUH REPO.

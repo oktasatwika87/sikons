@@ -14,13 +14,15 @@ import (
 )
 
 type Config struct {
-	Env            string // "development" | "production"
-	HTTPPort       string
-	DatabaseURL    string
-	RedisURL       string
-	LogLevel       slog.Level
-	JWTSecret      string
-	AccessTokenTTL time.Duration
+	Env             string // "development" | "production"
+	HTTPPort        string
+	DatabaseURL     string
+	RedisURL        string
+	LogLevel        slog.Level
+	JWTSecret       string
+	AccessTokenTTL  time.Duration
+	CampusTZ        *time.Location // zona waktu kampus, misal Asia/Jakarta
+	SlotHorizonDays int            // berapa hari ke depan slot harus di-generate
 }
 
 // Load membaca env dan mengembalikan error kalau ada yang wajib tapi kosong.
@@ -45,6 +47,25 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("ACCESS_TOKEN_TTL tidak valid: %w", err)
 	}
 	cfg.AccessTokenTTL = ttl
+
+	// Zona waktu kampus. Default Asia/Jakarta. Gagal muat = gagal start.
+	campusTZ := env("CAMPUS_TIMEZONE", "Asia/Jakarta")
+	loc, err := time.LoadLocation(campusTZ)
+	if err != nil {
+		return Config{}, fmt.Errorf("CAMPUS_TIMEZONE %q tidak valid: %w", campusTZ, err)
+	}
+	cfg.CampusTZ = loc
+
+	// Berapa hari ke depan slot di-generate. Default 30 hari.
+	cfg.SlotHorizonDays = 30
+	if h := os.Getenv("SLOT_HORIZON_DAYS"); h != "" {
+		var n int
+		_, err := fmt.Sscanf(h, "%d", &n)
+		if err != nil || n < 1 {
+			return Config{}, fmt.Errorf("SLOT_HORIZON_DAYS %q harus angka positif: %w", h, err)
+		}
+		cfg.SlotHorizonDays = n
+	}
 
 	// Dikumpulkan dulu semuanya, baru dilaporkan sekaligus. Melaporkan satu
 	// per satu memaksa orang menjalankan ulang program berkali-kali untuk

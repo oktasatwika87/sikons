@@ -16,7 +16,7 @@ import (
 const DefaultMaxActiveBookings = 3
 
 // Error domain. Semuanya dideklarasikan sebagai variabel supaya pemanggil bisa
-// membedakannya dengan errors.Is(), bukan dengan mencocokkan teks pesan.
+// membedakannya dengan errors.Is(), bukan dengan mencocokkan pesan.
 //
 // Kenapa ini penting: layer HTTP nanti perlu memetakan ErrSlotAlreadyBooked ke
 // 409 dan ErrSlotNotFound ke 404. Kalau pembedanya adalah string pesan, maka
@@ -24,6 +24,7 @@ const DefaultMaxActiveBookings = 3
 var (
 	ErrSlotNotFound      = errors.New("slot tidak ditemukan")
 	ErrSlotAlreadyBooked = errors.New("slot sudah dipesan")
+	ErrSlotWithdrawn     = errors.New("slot sudah tidak tersedia")
 	ErrStudentNotFound   = errors.New("mahasiswa tidak ditemukan")
 	ErrLimitReached      = errors.New("batas booking aktif tercapai")
 )

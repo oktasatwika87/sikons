@@ -94,16 +94,24 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Booking, error) 
 	//     di tengah, Postgres melepasnya sendiri. Lock di Redis butuh TTL, dan
 	//     TTL yang kependekan melepas kunci saat pekerjaan belum selesai.
 	//   - tidak menambah komponen yang harus ikut hidup agar booking benar.
+	//
+	// Satu query ini mengambil status dan cek withdrawn sekaligus — lebih
+	// efisien dari pada query terpisah, dan konsistensinya tetap terjaga
+	// karena keduanya dilindungi FOR UPDATE yang sama.
 	var status string
+	var withdrawn bool
 	err = tx.QueryRow(ctx,
-		`SELECT status::text FROM slots WHERE id = $1::uuid FOR UPDATE`,
+		`SELECT status::text, withdrawn_at IS NOT NULL FROM slots WHERE id = $1::uuid FOR UPDATE`,
 		in.SlotID,
-	).Scan(&status)
+	).Scan(&status, &withdrawn)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSlotNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mengunci baris slot: %w", err)
+	}
+	if withdrawn {
+		return nil, ErrSlotWithdrawn
 	}
 	if status != "open" {
 		return nil, ErrSlotAlreadyBooked
