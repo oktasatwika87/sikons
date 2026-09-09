@@ -164,16 +164,19 @@ func statusSlot(t *testing.T, slotID string) string {
 
 // ---------------------------------------------------------------- test dasar
 
-func TestCreate_SuksesSaatSlotMasihOpen(t *testing.T) {
+func TestCreate_SuksessaatSlotMasihOpen(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
 	slot := buatSlot(t, dosen, 72*time.Hour)
 
-	b, err := NewService(poolUji).Create(context.Background(), CreateInput{
+	b, replay, err := NewService(poolUji, 60).Create(context.Background(), CreateInput{
 		SlotID: slot, StudentID: mhs[0], Topic: "Bimbingan skripsi",
 	})
 	if err != nil {
 		t.Fatalf("mau sukses, dapat error: %v", err)
+	}
+	if replay {
+		t.Error("replay = true, mau false")
 	}
 
 	if b.Status != "confirmed" {
@@ -190,7 +193,7 @@ func TestCreate_SuksesSaatSlotMasihOpen(t *testing.T) {
 func TestCreate_SlotTidakAda(t *testing.T) {
 	mhs := buatMahasiswa(t, 1)
 
-	_, err := NewService(poolUji).Create(context.Background(), CreateInput{
+	_, _, err := NewService(poolUji, 60).Create(context.Background(), CreateInput{
 		SlotID:    "00000000-0000-0000-0000-000000000000",
 		StudentID: mhs[0], Topic: "x",
 	})
@@ -203,14 +206,15 @@ func TestCreate_SlotSudahDipesanOrangLain(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 2)
 	slot := buatSlot(t, dosen, 72*time.Hour)
-	svc := NewService(poolUji)
+	svc := NewService(poolUji, 60)
 
-	if _, err := svc.Create(context.Background(),
-		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "duluan"}); err != nil {
+	_, _, err := svc.Create(context.Background(),
+		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "duluan"})
+	if err != nil {
 		t.Fatalf("booking pertama gagal: %v", err)
 	}
 
-	_, err := svc.Create(context.Background(),
+	_, _, err = svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[1], Topic: "telat"})
 	if !errors.Is(err, ErrSlotAlreadyBooked) {
 		t.Fatalf("err = %v, mau ErrSlotAlreadyBooked", err)
@@ -224,18 +228,19 @@ func TestCreate_SlotSudahDipesanOrangLain(t *testing.T) {
 func TestCreate_BatasTigaBookingAktif(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji)
+	svc := NewService(poolUji, 60)
 
 	for i := 0; i < DefaultMaxActiveBookings; i++ {
 		slot := buatSlot(t, dosen, time.Duration(24+i)*time.Hour)
-		if _, err := svc.Create(context.Background(),
-			CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "x"}); err != nil {
+		_, _, err := svc.Create(context.Background(),
+			CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "x"})
+		if err != nil {
 			t.Fatalf("booking ke-%d gagal: %v", i+1, err)
 		}
 	}
 
 	slot := buatSlot(t, dosen, 100*time.Hour)
-	_, err := svc.Create(context.Background(),
+	_, _, err := svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "kelebihan"})
 	if !errors.Is(err, ErrLimitReached) {
 		t.Fatalf("err = %v, mau ErrLimitReached", err)
@@ -246,7 +251,7 @@ func TestCreate_BatasTigaBookingAktif(t *testing.T) {
 func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji)
+	svc := NewService(poolUji, 60)
 
 	// Tiga slot di masa lalu, diisi langsung lewat SQL karena Create wajar saja
 	// menolak slot yang sudah lewat nanti di M3.
@@ -261,8 +266,9 @@ func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
 	}
 
 	slot := buatSlot(t, dosen, 48*time.Hour)
-	if _, err := svc.Create(context.Background(),
-		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "baru"}); err != nil {
+	_, _, err := svc.Create(context.Background(),
+		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "baru"})
+	if err != nil {
 		t.Fatalf("mau sukses, dapat: %v", err)
 	}
 }
@@ -271,7 +277,7 @@ func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
 func TestCreate_SlotDitarik(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji)
+	svc := NewService(poolUji, 60)
 
 	slot := buatSlot(t, dosen, 72*time.Hour)
 
@@ -283,7 +289,7 @@ func TestCreate_SlotDitarik(t *testing.T) {
 	}
 
 	// Pesan — harus gagal dengan ErrSlotWithdrawn
-	_, err = svc.Create(context.Background(),
+	_, _, err = svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "coba"})
 	if !errors.Is(err, ErrSlotWithdrawn) {
 		t.Fatalf("err = %v, mau ErrSlotWithdrawn", err)
@@ -308,7 +314,7 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, jumlah)
 	slot := buatSlot(t, dosen, 72*time.Hour)
-	svc := NewService(poolUji)
+	svc := NewService(poolUji, 60)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -318,6 +324,7 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 	// yang menyentuh alamat memori yang sama — aman tanpa mutex. `go test -race`
 	// yang akan membuktikan klaim ini, bukan keyakinan saya.
 	hasil := make([]error, jumlah)
+	ids := make([]string, jumlah)
 
 	var wg sync.WaitGroup
 	for i := 0; i < jumlah; i++ {
@@ -325,9 +332,12 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-mulai
-			_, err := svc.Create(ctx, CreateInput{
+			b, _, err := svc.Create(ctx, CreateInput{
 				SlotID: slot, StudentID: mhs[i], Topic: "rebutan",
 			})
+			if err == nil && b != nil {
+				ids[i] = b.ID
+			}
 			hasil[i] = err
 		}(i)
 	}
@@ -337,10 +347,14 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 
 	var sukses, konflik int
 	var lain []error
-	for _, err := range hasil {
+	var idPertama string
+	for i, err := range hasil {
 		switch {
 		case err == nil:
 			sukses++
+			if idPertama == "" {
+				idPertama = ids[i]
+			}
 		case errors.Is(err, ErrSlotAlreadyBooked):
 			konflik++
 		default:
@@ -358,6 +372,13 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 	// "seolah-olah berhasil ditolak" — misalnya timeout pool atau deadlock.
 	if len(lain) > 0 {
 		t.Errorf("ada %d error di luar dugaan, contoh pertama: %v", len(lain), lain[0])
+	}
+
+	// Semua id harus sama.
+	for i, id := range ids {
+		if id != "" && id != idPertama {
+			t.Errorf("booking id[%d] = %q, mau %q", i, id, idPertama)
+		}
 	}
 
 	// Hitungan di memori bisa saja benar sementara databasenya kacau.
@@ -383,7 +404,7 @@ func TestCreate_SatuMahasiswaMenembakSepuluhSlotSekaligus(t *testing.T) {
 
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji)
+	svc := NewService(poolUji, 60)
 
 	slots := make([]string, jumlah)
 	for i := range slots {
@@ -402,7 +423,7 @@ func TestCreate_SatuMahasiswaMenembakSepuluhSlotSekaligus(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-mulai
-			_, err := svc.Create(ctx, CreateInput{
+			_, _, err := svc.Create(ctx, CreateInput{
 				SlotID: slots[i], StudentID: mhs[0], Topic: "borong",
 			})
 			hasil[i] = err
@@ -443,5 +464,67 @@ func TestCreate_SatuMahasiswaMenembakSepuluhSlotSekaligus(t *testing.T) {
 	}
 	if tersimpan != DefaultMaxActiveBookings {
 		t.Errorf("booking tersimpan = %d, mau %d — batas jebol", tersimpan, DefaultMaxActiveBookings)
+	}
+}
+
+// ---------------------------------------------------------------- idempotency
+
+func TestCreate_IdempotencyKeyKlaimBerhasil(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	slot := buatSlot(t, dosen, 72*time.Hour)
+	svc := NewService(poolUji, 60)
+
+	key := "test-key-" + unik()
+	hash := ComputeRequestHash(slot, "Topik", "")
+
+	// Request pertama: klaim berhasil, booking dibuat.
+	b1, replay1, err1 := svc.Create(context.Background(), CreateInput{
+		SlotID: slot, StudentID: mhs[0], Topic: "Topik",
+		IdempotencyKey: key, RequestHash: hash,
+	})
+	if err1 != nil {
+		t.Fatalf("request pertama gagal: %v", err1)
+	}
+	if replay1 {
+		t.Error("replay1 = true, mau false")
+	}
+	if b1 == nil {
+		t.Fatal("b1 = nil")
+	}
+
+	// Request kedua: key sama, hash sama -> replay.
+	b2, replay2, err2 := svc.Create(context.Background(), CreateInput{
+		SlotID: slot, StudentID: mhs[0], Topic: "Topik",
+		IdempotencyKey: key, RequestHash: hash,
+	})
+	if err2 != nil {
+		t.Fatalf("request kedua gagal: %v", err2)
+	}
+	if !replay2 {
+		t.Error("replay2 = false, mau true")
+	}
+	if b2 == nil {
+		t.Log("b2 = nil (replay, tidak ada booking baru)")
+	} else if b2.ID != b1.ID {
+		t.Errorf("booking id berbeda: %s vs %s", b2.ID, b1.ID)
+	}
+
+	// Request ketiga: key sama, hash berbeda -> ErrIdempotencyReused.
+	hash2 := ComputeRequestHash(slot, "Topik Lain", "")
+	_, replay3, err3 := svc.Create(context.Background(), CreateInput{
+		SlotID: slot, StudentID: mhs[0], Topic: "Topik Lain",
+		IdempotencyKey: key, RequestHash: hash2,
+	})
+	if !errors.Is(err3, ErrIdempotencyReused) {
+		t.Fatalf("err3 = %v, mau ErrIdempotencyReused", err3)
+	}
+	if replay3 {
+		t.Error("replay3 = true, mau false")
+	}
+
+	// Hanya ada 1 booking.
+	if n := hitungBookingAktif(t, slot); n != 1 {
+		t.Errorf("booking = %d, mau 1", n)
 	}
 }

@@ -95,7 +95,7 @@ func serverLengkap(t *testing.T) http.Handler {
 	}
 
 	return New(config.Config{Env: "test", CampusTZ: campusTZ, SlotHorizonDays: 30}, Deps{
-		DB:           pool,
+		Pool:         pool,
 		Auth:         auth.NewService(pool, tokens, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		Tokens:       tokens,
 		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
