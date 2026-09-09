@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -82,13 +85,15 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*User, error)
 }
 
 type LoginResult struct {
-	User        *User
-	AccessToken string
-	ExpiresAt   time.Time
+	User           *User
+	AccessToken    string
+	RefreshToken   string
+	ExpiresAt      time.Time
+	RefreshExpires time.Time
 }
 
-// Login memeriksa kredensial lalu menerbitkan access token.
-func (s *Service) Login(ctx context.Context, emailInput, password string) (*LoginResult, error) {
+// Login memeriksa kredensial lalu menerbitkan access token dan refresh token.
+func (s *Service) Login(ctx context.Context, emailInput, password, userAgent string) (*LoginResult, error) {
 	email := normalkanEmail(emailInput)
 
 	var u User
@@ -124,12 +129,23 @@ func (s *Service) Login(ctx context.Context, emailInput, password string) (*Logi
 		return nil, ErrAccountInactive
 	}
 
-	token, kedaluwarsa, err := s.issuer.Issue(Identity{UserID: u.ID, Role: u.Role})
+	accessToken, kedaluwarsa, err := s.issuer.Issue(Identity{UserID: u.ID, Role: u.Role})
 	if err != nil {
 		return nil, err
 	}
 
-	return &LoginResult{User: &u, AccessToken: token, ExpiresAt: kedaluwarsa}, nil
+	refreshToken, err := s.IssueRefreshToken(ctx, u.ID, userAgent)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LoginResult{
+		User:           &u,
+		AccessToken:    accessToken,
+		RefreshToken:   refreshToken,
+		ExpiresAt:      kedaluwarsa,
+		RefreshExpires: time.Now().Add(RefreshTokenTTL),
+	}, nil
 }
 
 // ByID dipakai endpoint /me: token cuma menyimpan id dan role, sisanya selalu
@@ -152,4 +168,222 @@ func (s *Service) ByID(ctx context.Context, id string) (*User, error) {
 
 func normalkanEmail(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
+}
+
+// ---------------------------------------------------------------- refresh token
+
+const RefreshTokenTTL = 30 * 24 * time.Hour // 30 hari, sliding
+
+// IssueRefreshToken membuat token baru dengan family_id baru. Plaintext dikembalikan
+// ke caller (untuk disetel di cookie), SHA-256 hash-nya disimpan ke database.
+//
+// Tidak pakai bcrypt: 32 byte acak dari crypto/rand punya ~256 bit entropi,
+// tidak bisa ditebak, jadi hash cepat sudah cukup. bcrypt dirancang untuk
+// password entropi-rendah; di sini justru memperlambat operasi yang mestinya
+// cepat (tiap refresh harus secepat mungkin).
+func (s *Service) IssueRefreshToken(ctx context.Context, userID, userAgent string) (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("membuat token: %w", err)
+	}
+	hash := sha256.Sum256(bytes)
+
+	encoded := base64.RawURLEncoding.EncodeToString(bytes)
+	expiresAt := time.Now().Add(RefreshTokenTTL)
+
+	result, err := s.pool.Exec(ctx, `
+		INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at, user_agent)
+		VALUES ($1, $2, gen_random_uuid(), $3, $4)`,
+		userID, hash[:], expiresAt, userAgent,
+	)
+	if err != nil {
+		return "", fmt.Errorf("menyimpan refresh token: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return "", fmt.Errorf("menyimpan refresh token: rows affected = %d", result.RowsAffected())
+	}
+
+	return encoded, nil
+}
+
+// RotateRefreshToken memutar token dalam satu transaksi.
+//
+// Deteksi reuse: kalau token sudah di-revoke, seluruh family dicabut dan
+// ErrRefreshTokenReused dikembalikan. Ini berarti token itu pernah dicuri dan
+// dipakai oleh penyerang — satu-satunya respons aman adalah mencabut semuanya.
+//
+// FOR UPDATE pada SELECT:WAJIB. Tanpa itu, dua tab yang merefresh bersamaan
+// akan sama-sama menemukan token yang belum di-revoke, dan sama-sama membuat
+// token baru. Kedua token baru valid, tapi yang pertama melakukan refresh
+// mencuri token kedua yang belum selesai dibuat. FOR UPDATE mengunci baris
+// sehingga transaksi kedua harus menunggu sampai yang pertama commit, lalu
+// melihat tokennya sudah di-revoke dan gagal dengan benar.
+//
+// CATATAN TTL: 30 hari sliding. Alternatifnya absolute cap (30 hari dari login
+// pertama, tidak peduli berapa kali di-refresh). Sliding dipilih karena lebih
+// user-friendly — selama aktif, sesi tidak pernah kedaluwarsa tanpa sebab.
+func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent string) (string, error) {
+	// Decode base64, lalu hash bytes-nya (bukan UTF-8 string)
+	decoded, err := base64.RawURLEncoding.DecodeString(plaintext)
+	if err != nil {
+		return "", ErrRefreshTokenInvalid
+	}
+	hash := sha256.Sum256(decoded)
+
+	var rowID, familyID, userID string
+	var revokedAt *time.Time
+	err = s.pool.QueryRow(ctx, `
+		SELECT id, family_id, user_id, revoked_at
+		FROM refresh_tokens
+		WHERE token_hash = $1
+		FOR UPDATE`,
+		hash[:],
+	).Scan(&rowID, &familyID, &userID, &revokedAt)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrRefreshTokenInvalid
+	}
+	if err != nil {
+		return "", fmt.Errorf("mencari token: %w", err)
+	}
+
+	if revokedAt != nil {
+		// Token sudah di-revoke — deteksi reuse. Cabut SELURUH family
+		// karena penyerang yang merefresh token curian akan membuat token baru
+		// yang juga sudah dirottasi oleh pemilik sah. Yang aman: cabut semua.
+		_, err := s.pool.Exec(ctx, `
+			UPDATE refresh_tokens
+			SET revoked_at = now()
+			WHERE family_id = $1 AND revoked_at IS NULL`,
+			familyID,
+		)
+		if err != nil {
+			return "", fmt.Errorf("mencabut family saat reuse: %w", err)
+		}
+		// Log level Warn, bukan Error — ini bukan bug sistem, tapi aktivitas
+		// mencurigakan yang perlu diselidiki (misalnya log aggregation).
+		return "", ErrRefreshTokenReused
+	}
+
+	// Periksa apakah sudah lewat expires_at
+	var expiresAt time.Time
+	err = s.pool.QueryRow(ctx, `
+		SELECT expires_at FROM refresh_tokens WHERE id = $1`,
+		rowID,
+	).Scan(&expiresAt)
+	if err != nil {
+		return "", fmt.Errorf("membaca kedaluwarsa token: %w", err)
+	}
+	if time.Now().After(expiresAt) {
+		return "", ErrRefreshTokenExpired
+	}
+
+	// Mulai transaksi eksplisit agar atomis.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("memulai transaksi: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Buat token baru dengan family_id yang SAMA, dapat ID-nya via RETURNING.
+	plaintextBaru, err := func() (string, error) {
+		bytes := make([]byte, 32)
+		if _, err := rand.Read(bytes); err != nil {
+			return "", fmt.Errorf("membuat token: %w", err)
+		}
+		hashBaru := sha256.Sum256(bytes)
+		encoded := base64.RawURLEncoding.EncodeToString(bytes)
+		expiresAtBaru := time.Now().Add(RefreshTokenTTL)
+
+		var idBaru string
+		err := tx.QueryRow(ctx, `
+			INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at, user_agent)
+			VALUES ($1, $2, $3, $4, $5)
+			RETURNING id`,
+			userID, hashBaru[:], familyID, expiresAtBaru, userAgent,
+		).Scan(&idBaru)
+		if err != nil {
+			return "", fmt.Errorf("menyimpan token baru: %w", err)
+		}
+
+		// Update token lama: tandai revoked_at dan replaced_by.
+		_, err = tx.Exec(ctx, `
+			UPDATE refresh_tokens
+			SET revoked_at = now(), replaced_by = $1
+			WHERE id = $2`,
+			idBaru, rowID,
+		)
+		if err != nil {
+			return "", fmt.Errorf("menandai token dirotasi: %w", err)
+		}
+
+		return encoded, nil
+	}()
+	if err != nil {
+		return "", err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("commit transaksi: %w", err)
+	}
+
+	return plaintextBaru, nil
+}
+
+// RevokeRefreshToken mencabut seluruh family dari token yang diberikan.
+// Dipakai saat logout.
+func (s *Service) RevokeRefreshToken(ctx context.Context, plaintext string) error {
+	decoded, err := base64.RawURLEncoding.DecodeString(plaintext)
+	if err != nil {
+		return nil // Token tidak valid — logout tetap idempoten
+	}
+	hash := sha256.Sum256(decoded)
+
+	var familyID string
+	err = s.pool.QueryRow(ctx, `
+		SELECT family_id FROM refresh_tokens WHERE token_hash = $1`,
+		hash[:],
+	).Scan(&familyID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Token tidak ada — logout tetap berhasil (idempoten)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("mencari family token: %w", err)
+	}
+
+	_, err = s.pool.Exec(ctx, `
+		UPDATE refresh_tokens SET revoked_at = now()
+		WHERE family_id = $1 AND revoked_at IS NULL`,
+		familyID,
+	)
+	if err != nil {
+		return fmt.Errorf("mencabut family token: %w", err)
+	}
+
+	return nil
+}
+
+// UserIDDariRefreshToken membaca user_id dari baris refresh token.
+// Dipakai saat refresh untuk mendapat identity tanpa harus minta password lagi.
+func (s *Service) UserIDDariRefreshToken(ctx context.Context, plaintext string) (string, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(plaintext)
+	if err != nil {
+		return "", ErrRefreshTokenInvalid
+	}
+	hash := sha256.Sum256(decoded)
+
+	var userID string
+	err = s.pool.QueryRow(ctx, `
+		SELECT user_id FROM refresh_tokens WHERE token_hash = $1 AND revoked_at IS NULL`,
+		hash[:],
+	).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrRefreshTokenInvalid
+	}
+	if err != nil {
+		return "", fmt.Errorf("mencari user dari refresh token: %w", err)
+	}
+
+	return userID, nil
 }

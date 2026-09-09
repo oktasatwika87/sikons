@@ -16,14 +16,17 @@ const (
 )
 
 var (
-	ErrEmailTaken         = errors.New("email sudah terdaftar")
-	ErrInvalidCredentials = errors.New("email atau password salah")
-	ErrAccountInactive    = errors.New("akun dinonaktifkan")
-	ErrPasswordTooShort   = errors.New("password minimal 8 karakter")
-	ErrPasswordTooLong    = errors.New("password maksimal 72 karakter")
-	ErrTokenInvalid       = errors.New("token tidak valid")
-	ErrTokenExpired       = errors.New("token kedaluwarsa")
-	ErrSecretTooShort     = errors.New("JWT_SECRET minimal 32 karakter")
+	ErrEmailTaken          = errors.New("email sudah terdaftar")
+	ErrInvalidCredentials  = errors.New("email atau password salah")
+	ErrAccountInactive     = errors.New("akun dinonaktifkan")
+	ErrPasswordTooShort    = errors.New("password minimal 8 karakter")
+	ErrPasswordTooLong     = errors.New("password maksimal 72 karakter")
+	ErrTokenInvalid        = errors.New("token tidak valid")
+	ErrTokenExpired        = errors.New("token kedaluwarsa")
+	ErrSecretTooShort      = errors.New("JWT_SECRET minimal 32 karakter")
+	ErrRefreshTokenInvalid = errors.New("refresh token tidak valid")
+	ErrRefreshTokenExpired = errors.New("refresh token kedaluwarsa")
+	ErrRefreshTokenReused  = errors.New("refresh token sudah dipakai — kemungkinan dicuri")
 )
 
 // Identity adalah siapa si pemanggil, hasil pembacaan token.
