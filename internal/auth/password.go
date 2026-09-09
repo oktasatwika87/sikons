@@ -58,7 +58,11 @@ var hashUmpan = sync.OnceValue(func() []byte {
 // Tanpa ini, login gagal yang PERTAMA kali akan memakan waktu dua kali lipat
 // (menghitung hash umpan + membandingkan), dan justru itu yang menciptakan
 // selisih waktu yang ingin kita hilangkan.
-func Hangatkan() { _ = hashUmpan() }
+// Tidak me-reset gracePeriod di sini karena itu adalah state test,
+// bukan startup state yang perlu dijaga.
+func Hangatkan() {
+	_ = hashUmpan()
+}
 
 func HashPassword(plain string) (string, error) {
 	if len(plain) < minPasswordBytes {

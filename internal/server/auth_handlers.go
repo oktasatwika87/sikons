@@ -162,7 +162,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plaintextBaru, err := s.auth.RotateRefreshToken(r.Context(), cookie.Value, r.UserAgent())
+	plaintextBaru, userID, err := s.auth.RotateRefreshToken(r.Context(), cookie.Value, r.UserAgent())
 	if err != nil {
 		switch {
 		case errors.Is(err, auth.ErrRefreshTokenInvalid):
@@ -173,8 +173,12 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			s.log.Warn("refresh token kedaluwarsa", "err", err)
 			httpx.Error(w, http.StatusUnauthorized, "REFRESH_TOKEN_EXPIRED",
 				"Sesi habis, silakan login ulang", nil)
+		case errors.Is(err, auth.ErrRefreshInProgress):
+			// Balapan wajar — jangan set cookie, kembalikan 409.
+			// Frontend harus retry setelah sesaat.
+			httpx.Error(w, http.StatusConflict, "REFRESH_IN_PROGRESS",
+				"Sesi sedang diperbarui, coba lagi sesaat lagi", nil)
 		case errors.Is(err, auth.ErrRefreshTokenReused):
-			// Log level Warn — ini aktivitas mencurigakan, bukan error sistem.
 			s.log.Warn("refresh token reuse terdeteksi — kemungkinan pencurian",
 				"user_agent", r.UserAgent())
 			httpx.Error(w, http.StatusUnauthorized, "REFRESH_TOKEN_REUSED",
@@ -183,15 +187,6 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			s.log.Error("refresh token gagal", "err", err)
 			httpx.Internal(w)
 		}
-		return
-	}
-
-	// Buat access token baru. Kita perlu identity dari refresh token, jadi
-	// baca user berdasarkan user_id di baris refresh_token yang valid.
-	userID, err := s.auth.UserIDDariRefreshToken(r.Context(), plaintextBaru)
-	if err != nil {
-		s.log.Error("membaca user dari refresh token", "err", err)
-		httpx.Internal(w)
 		return
 	}
 
