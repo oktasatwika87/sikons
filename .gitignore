@@ -1,0 +1,20 @@
+# Rahasia
+.env
+*.pem
+
+# Hasil build
+/bin/
+/tmp/
+sikons
+
+# Go
+*.test
+*.out
+coverage.html
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/

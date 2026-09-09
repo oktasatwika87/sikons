@@ -1,0 +1,76 @@
+# Compose ini HANYA menjalankan infrastruktur (Postgres + Redis).
+# Aplikasi Go-nya sengaja dijalankan langsung di mesinmu dengan `make run`.
+#
+# Alasannya: menjalankan Go di dalam container saat development berarti setiap
+# perubahan satu baris kode harus melewati rebuild image — loop edit-jalan yang
+# tadinya 1 detik jadi 30 detik. Postgres dan Redis tidak pernah kamu ubah,
+# jadi merekalah yang cocok dikurung di container.
+#
+# Nanti di M7 baru ditambah Dockerfile untuk api/worker/web, karena untuk
+# DEPLOY memang semuanya harus jadi image.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sikons_postgres
+    environment:
+      POSTGRES_USER: sikons
+      POSTGRES_PASSWORD: sikons_dev
+      POSTGRES_DB: sikons
+    ports:
+      - "5433:5432" # 5433 di sisi laptop, supaya tidak bentrok kalau kamu
+                    # sudah punya Postgres lain yang jalan di 5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Tanpa healthcheck, `docker compose up` melaporkan "started" padahal
+      # Postgres masih beberapa detik lagi siap menerima koneksi — dan migrasi
+      # yang dijalankan tepat di celah itu akan gagal dengan pesan aneh.
+      test: ["CMD-SHELL", "pg_isready -U sikons -d sikons"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: sikons_redis
+    ports:
+      - "6380:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # golang-migrate sebagai service, bukan `docker run` lepas.
+  #
+  # Kenapa begini dan bukan --network=host: di macOS, Docker Desktop
+  # menjalankan container di dalam VM Linux, jadi "localhost" di dalam
+  # container menunjuk ke VM itu, bukan ke laptopmu. Dengan menjadikannya
+  # service di compose, container migrate ikut jaringan internal compose dan
+  # bisa memanggil Postgres lewat nama service-nya: "postgres:5432".
+  #
+  # profiles: ["tools"] membuatnya TIDAK ikut menyala saat `docker compose up`.
+  # Dia cuma jalan kalau dipanggil eksplisit lewat `docker compose run`.
+  #
+  # depends_on + service_healthy menghapus seluruh kelas bug "migrasi gagal
+  # karena Postgres baru siap 2 detik lagi".
+  migrate:
+    image: migrate/migrate:v4.17.1
+    profiles: ["tools"]
+    volumes:
+      - ./migrations:/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint:
+      - migrate
+      - -path=/migrations
+      - -database=postgres://sikons:sikons_dev@postgres:5432/sikons?sslmode=disable
+
+volumes:
+  postgres_data:
+  redis_data:
