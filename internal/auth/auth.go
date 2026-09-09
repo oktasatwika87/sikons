@@ -27,7 +27,31 @@ var (
 	ErrRefreshTokenInvalid = errors.New("refresh token tidak valid")
 	ErrRefreshTokenExpired = errors.New("refresh token kedaluwarsa")
 	ErrRefreshTokenReused  = errors.New("refresh token sudah dipakai — kemungkinan dicuri")
+	ErrRefreshInProgress   = errors.New("refresh token sedang diproses")
 )
+
+// RefreshGracePeriod adalah window waktu di mana reuse token oleh request yang
+// kalah balapan dianggap wajar, bukan pencurian. Selama penerus token itu belum
+// dicabut dan masih dalam grace period, sistem menganggap kedua request adalah
+// dari sesi yang sama (misalnya: tab browser berbeda).
+var RefreshGracePeriod = 30 * time.Second
+
+// gracePeriod adalah variabel yang bisa di-overwrite oleh test.
+// Pola sama dengan bcryptCost.
+var gracePeriod = RefreshGracePeriod
+
+// SetGracePeriodUntukTest menimpa grace period untuk keperluan test.
+// Harus dipanggil di awal setiap test yang butuh nilai non-standar.
+func SetGracePeriodUntukTest(d time.Duration) {
+	gracePeriod = d
+}
+
+// ResetGracePeriodMengambang mengembalikan grace period ke nilai default.
+// Test yang memanggil SetGracePeriodUntukTest bertanggung jawab memanggil ini
+// di deferred cleanup — pola yang sama dengan SetBcryptCostUntukTest.
+func ResetGracePeriodMengambang() {
+	gracePeriod = RefreshGracePeriod
+}
 
 // Identity adalah siapa si pemanggil, hasil pembacaan token.
 // Sengaja hanya berisi dua hal — apa pun selain ini harus diambil dari

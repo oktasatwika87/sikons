@@ -67,7 +67,7 @@ func run() error {
 		Addr: ":" + cfg.HTTPPort,
 		Handler: server.New(cfg, server.Deps{
 			DB:     pool,
-			Auth:   auth.NewService(pool, tokens),
+			Auth:   auth.NewService(pool, tokens, log),
 			Tokens: tokens,
 			Log:    log,
 		}).Routes(),
