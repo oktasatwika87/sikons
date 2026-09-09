@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/oktasatwika/sikons/internal/auth"
 	"github.com/oktasatwika/sikons/internal/availability"
 	"github.com/oktasatwika/sikons/internal/httpx"
+	"github.com/oktasatwika/sikons/internal/slotgen"
 )
 
 // ---------------------------------------------------------------- availability rules
@@ -27,6 +29,29 @@ type createRuleRequest struct {
 type updateRuleRequest struct {
 	EffectiveTo string `json:"effective_to,omitempty"` // YYYY-MM-DD
 	IsActive    *bool  `json:"is_active,omitempty"`
+}
+
+// reconcileSlot memanggil Reconcile untuk dosen terkait.
+// Jika gagal, cukup log error — request utama tetap berhasil.
+// Mengembalikan Summary kosong jika gagal.
+func (s *Server) reconcileSlot(ctx context.Context, lecturerID string) slotgen.Summary {
+	if s.slotgen == nil {
+		return slotgen.Summary{}
+	}
+	from, to := slotgen.JendelaDefault(time.Now(), s.cfg.CampusTZ, s.slotgen.Horizon())
+	summary, err := s.slotgen.Reconcile(ctx, lecturerID, from, to, s.log)
+	if err != nil {
+		s.log.Error("rekonsiliasi slot gagal", "lecturer_id", lecturerID, "err", err)
+		return slotgen.Summary{}
+	}
+	if summary.Created > 0 || summary.Deleted > 0 {
+		s.log.Info("slot direkonsiliasi",
+			"lecturer_id", lecturerID,
+			"created", summary.Created,
+			"deleted", summary.Deleted,
+		)
+	}
+	return summary
 }
 
 func (s *Server) handleCreateAvailabilityRule(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +123,10 @@ func (s *Server) handleCreateAvailabilityRule(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	httpx.JSON(w, http.StatusCreated, map[string]string{"id": ruleID})
+	// Rekonsiliasi slot agar aturan baru langsung aktif.
+	summary := s.reconcileSlot(r.Context(), id.UserID)
+
+	httpx.JSON(w, http.StatusCreated, map[string]any{"id": ruleID, "slots": summary})
 }
 
 func (s *Server) handleListAvailabilityRules(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +192,10 @@ func (s *Server) handleUpdateAvailabilityRule(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	// Rekonsiliasi slot agar perubahan langsung berdampak.
+	summary := s.reconcileSlot(r.Context(), id.UserID)
+
+	httpx.JSON(w, http.StatusOK, map[string]any{"slots": summary})
 }
 
 func (s *Server) handleDeleteAvailabilityRule(w http.ResponseWriter, r *http.Request) {
@@ -194,7 +225,10 @@ func (s *Server) handleDeleteAvailabilityRule(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	// Rekonsiliasi slot agar penghapusan langsung berdampak.
+	summary := s.reconcileSlot(r.Context(), id.UserID)
+
+	httpx.JSON(w, http.StatusOK, map[string]any{"slots": summary})
 }
 
 // ---------------------------------------------------------------- availability exceptions
@@ -268,7 +302,10 @@ func (s *Server) handleCreateAvailabilityException(w http.ResponseWriter, r *htt
 		return
 	}
 
-	httpx.JSON(w, http.StatusCreated, map[string]string{"id": exceptionID})
+	// Rekonsiliasi slot agar pengecualian baru langsung berdampak.
+	summary := s.reconcileSlot(r.Context(), id.UserID)
+
+	httpx.JSON(w, http.StatusCreated, map[string]any{"id": exceptionID, "slots": summary})
 }
 
 func (s *Server) handleListAvailabilityExceptions(w http.ResponseWriter, r *http.Request) {
@@ -335,5 +372,8 @@ func (s *Server) handleDeleteAvailabilityException(w http.ResponseWriter, r *htt
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	// Rekonsiliasi slot agar penghapusan pengecualian langsung berdampak.
+	summary := s.reconcileSlot(r.Context(), id.UserID)
+
+	httpx.JSON(w, http.StatusOK, map[string]any{"slots": summary})
 }

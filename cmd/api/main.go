@@ -16,6 +16,7 @@ import (
 	"github.com/oktasatwika/sikons/internal/config"
 	"github.com/oktasatwika/sikons/internal/db"
 	"github.com/oktasatwika/sikons/internal/server"
+	"github.com/oktasatwika/sikons/internal/slotgen"
 )
 
 func main() {
@@ -72,6 +73,7 @@ func run() error {
 			Tokens:       tokens,
 			Log:          log,
 			Availability: availability.NewService(pool),
+			Slotgen:      slotgen.New(pool, cfg.CampusTZ, cfg.SlotHorizonDays),
 		}).Routes(),
 
 		// Tanpa timeout ini, satu klien yang membuka koneksi lalu diam saja

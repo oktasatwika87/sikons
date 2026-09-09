@@ -21,6 +21,7 @@ import (
 	"github.com/oktasatwika/sikons/internal/auth"
 	"github.com/oktasatwika/sikons/internal/availability"
 	"github.com/oktasatwika/sikons/internal/config"
+	"github.com/oktasatwika/sikons/internal/slotgen"
 )
 
 // Test di file ini butuh Postgres sungguhan. Kalau TEST_DATABASE_URL kosong,
@@ -87,12 +88,19 @@ func serverLengkap(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 
-	return New(config.Config{Env: "test"}, Deps{
+	// Zona waktu kampus dan horizon untuk slotgen
+	campusTZ, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		t.Fatal("gagal load zona kampus:", err)
+	}
+
+	return New(config.Config{Env: "test", CampusTZ: campusTZ, SlotHorizonDays: 30}, Deps{
 		DB:           pool,
 		Auth:         auth.NewService(pool, tokens, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		Tokens:       tokens,
 		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Availability: availability.NewService(pool),
+		Slotgen:      slotgen.New(pool, campusTZ, 30),
 	}).Routes()
 }
 

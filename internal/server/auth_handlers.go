@@ -224,7 +224,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		if revokeErr := s.auth.RevokeRefreshToken(r.Context(), cookie.Value); revokeErr != nil {
 			s.log.Error("logout: mencabut refresh token", "err", revokeErr)
-			// Tetap lanjut — cookie akan dihapus，不管 token-nya gagal dicabut.
+			// Tetap lanjut — cookie akan dihapus meski token gagal dicabut.
 		}
 	}
 

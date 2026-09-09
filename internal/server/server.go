@@ -13,6 +13,7 @@ import (
 	"github.com/oktasatwika/sikons/internal/auth"
 	"github.com/oktasatwika/sikons/internal/availability"
 	"github.com/oktasatwika/sikons/internal/config"
+	"github.com/oktasatwika/sikons/internal/slotgen"
 )
 
 // Server memegang semua dependency handler. Ini pola dependency injection
@@ -30,6 +31,8 @@ type Server struct {
 	tokens       *auth.TokenIssuer
 	log          *slog.Logger
 	availability *availability.Service
+	slotgen      *slotgen.Service
+	slotHorizon  int // hari, untuk rekonsiliasi
 }
 
 // Deps dikumpulkan dalam satu struct, bukan dijadikan parameter berjejer.
@@ -44,6 +47,7 @@ type Deps struct {
 	Tokens       *auth.TokenIssuer
 	Log          *slog.Logger
 	Availability *availability.Service
+	Slotgen      *slotgen.Service
 }
 
 // DB sengaja didefinisikan di SINI, di package yang MEMAKAINYA, bukan di
@@ -70,6 +74,8 @@ func New(cfg config.Config, deps Deps) *Server {
 		tokens:       deps.Tokens,
 		log:          deps.Log,
 		availability: deps.Availability,
+		slotgen:      deps.Slotgen,
+		slotHorizon:  cfg.SlotHorizonDays,
 	}
 }
 

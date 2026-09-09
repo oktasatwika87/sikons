@@ -8,7 +8,7 @@
 -include .env
 export
 
-.PHONY: help up down reset logs psql migrate-up migrate-down migrate-version migrate-new test-db run test test-unit test-concurrency test-cover tidy fmt vet
+.PHONY: help up down reset logs psql migrate-up migrate-down migrate-version migrate-new test-db run seed generate-slots test test-unit test-concurrency test-cover tidy fmt vet
 
 help: ## Tampilkan daftar perintah
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -53,6 +53,9 @@ run: ## Jalankan API server
 
 seed: ## Isi database dengan data demo (akun admin, dosen, mahasiswa)
 	go run ./cmd/seed
+
+generate-slots: ## Generate slot untuk semua dosen aktif berdasarkan aturan ketersediaan
+	go run ./cmd/generate-slots
 
 # Database uji TERPISAH dari database development. Test membersihkan tabel
 # dengan TRUNCATE di awal tiap test — kalau diarahkan ke database dev, data
