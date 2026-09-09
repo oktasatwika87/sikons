@@ -1,0 +1,422 @@
+package booking
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Test di file ini adalah INTEGRATION TEST: butuh Postgres sungguhan.
+//
+// Kenapa tidak dipalsukan? Karena yang sedang diuji BUKAN kode Go-nya,
+// melainkan perilaku penguncian baris Postgres. Database palsu akan selalu
+// meluluskan test ini sekaligus tidak membuktikan apa pun.
+//
+// Jalankan dengan:  make test-integration
+// Kalau TEST_DATABASE_URL kosong, seluruh file ini dilewati — supaya
+// `go test ./...` biasa tetap cepat dan tidak menuntut Docker hidup.
+
+var poolUji *pgxpool.Pool
+
+func TestMain(m *testing.M) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		fmt.Println("TEST_DATABASE_URL kosong — test integrasi booking dilewati")
+		os.Exit(0)
+	}
+
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		fmt.Println("TEST_DATABASE_URL tidak valid:", err)
+		os.Exit(1)
+	}
+	// Sengaja dinaikkan dari default. Dengan pool kekecilan, 100 goroutine akan
+	// mengantre di pool DULU sebelum sempat berebut baris slot — testnya lulus,
+	// tapi yang terbukti cuma antrean pool, bukan penguncian baris. Angka ini
+	// harus cukup besar supaya perebutan benar-benar terjadi di Postgres.
+	cfg.MaxConns = 30
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	poolUji, err = pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		fmt.Println("tidak bisa terhubung ke database uji:", err)
+		os.Exit(1)
+	}
+	if err := poolUji.Ping(ctx); err != nil {
+		fmt.Println("database uji tidak merespons:", err)
+		os.Exit(1)
+	}
+
+	kode := m.Run()
+	poolUji.Close()
+	os.Exit(kode)
+}
+
+// ---------------------------------------------------------------- helper
+
+func bersihkan(t *testing.T) {
+	t.Helper()
+	_, err := poolUji.Exec(context.Background(),
+		`TRUNCATE users, lecturer_profiles, slots, bookings, notifications CASCADE`)
+	if err != nil {
+		t.Fatalf("membersihkan tabel: %v", err)
+	}
+}
+
+func buatDosen(t *testing.T) string {
+	t.Helper()
+	var id string
+	err := poolUji.QueryRow(context.Background(), `
+		INSERT INTO users (email, password_hash, full_name, role)
+		VALUES ('dosen@uji.local', 'x', 'Dosen Uji', 'lecturer')
+		RETURNING id::text`).Scan(&id)
+	if err != nil {
+		t.Fatalf("membuat dosen: %v", err)
+	}
+	_, err = poolUji.Exec(context.Background(),
+		`INSERT INTO lecturer_profiles (user_id, department) VALUES ($1::uuid, 'TI')`, id)
+	if err != nil {
+		t.Fatalf("membuat profil dosen: %v", err)
+	}
+	return id
+}
+
+func buatMahasiswa(t *testing.T, jumlah int) []string {
+	t.Helper()
+	rows, err := poolUji.Query(context.Background(), `
+		INSERT INTO users (email, password_hash, full_name, role)
+		SELECT 'mhs' || i || '@uji.local', 'x', 'Mahasiswa ' || i, 'student'
+		FROM generate_series(1, $1) i
+		RETURNING id::text`, jumlah)
+	if err != nil {
+		t.Fatalf("membuat mahasiswa: %v", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("membaca id mahasiswa: %v", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("membaca id mahasiswa: %v", err)
+	}
+	return ids
+}
+
+// buatSlot membuat slot yang mulai `mulaiDalam` dari sekarang.
+func buatSlot(t *testing.T, dosenID string, mulaiDalam time.Duration) string {
+	t.Helper()
+	var id string
+	err := poolUji.QueryRow(context.Background(), `
+		INSERT INTO slots (lecturer_id, start_at, end_at)
+		VALUES ($1::uuid, now() + $2::interval, now() + $2::interval + interval '30 minutes')
+		RETURNING id::text`,
+		dosenID, fmt.Sprintf("%d seconds", int(mulaiDalam.Seconds()))).Scan(&id)
+	if err != nil {
+		t.Fatalf("membuat slot: %v", err)
+	}
+	return id
+}
+
+func hitungBookingAktif(t *testing.T, slotID string) int {
+	t.Helper()
+	var n int
+	err := poolUji.QueryRow(context.Background(),
+		`SELECT count(*) FROM bookings WHERE slot_id = $1::uuid AND status <> 'cancelled'`,
+		slotID).Scan(&n)
+	if err != nil {
+		t.Fatalf("menghitung booking: %v", err)
+	}
+	return n
+}
+
+func statusSlot(t *testing.T, slotID string) string {
+	t.Helper()
+	var s string
+	err := poolUji.QueryRow(context.Background(),
+		`SELECT status::text FROM slots WHERE id = $1::uuid`, slotID).Scan(&s)
+	if err != nil {
+		t.Fatalf("membaca status slot: %v", err)
+	}
+	return s
+}
+
+// ---------------------------------------------------------------- test dasar
+
+func TestCreate_SuksesSaatSlotMasihOpen(t *testing.T) {
+	bersihkan(t)
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	slot := buatSlot(t, dosen, 72*time.Hour)
+
+	b, err := NewService(poolUji).Create(context.Background(), CreateInput{
+		SlotID: slot, StudentID: mhs[0], Topic: "Bimbingan skripsi",
+	})
+	if err != nil {
+		t.Fatalf("mau sukses, dapat error: %v", err)
+	}
+
+	if b.Status != "confirmed" {
+		t.Errorf("status = %q, mau confirmed", b.Status)
+	}
+	if b.Topic != "Bimbingan skripsi" {
+		t.Errorf("topic = %q", b.Topic)
+	}
+	if got := statusSlot(t, slot); got != "booked" {
+		t.Errorf("status slot = %q, mau booked", got)
+	}
+}
+
+func TestCreate_SlotTidakAda(t *testing.T) {
+	bersihkan(t)
+	mhs := buatMahasiswa(t, 1)
+
+	_, err := NewService(poolUji).Create(context.Background(), CreateInput{
+		SlotID:    "00000000-0000-0000-0000-000000000000",
+		StudentID: mhs[0], Topic: "x",
+	})
+	if !errors.Is(err, ErrSlotNotFound) {
+		t.Fatalf("err = %v, mau ErrSlotNotFound", err)
+	}
+}
+
+func TestCreate_SlotSudahDipesanOrangLain(t *testing.T) {
+	bersihkan(t)
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 2)
+	slot := buatSlot(t, dosen, 72*time.Hour)
+	svc := NewService(poolUji)
+
+	if _, err := svc.Create(context.Background(),
+		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "duluan"}); err != nil {
+		t.Fatalf("booking pertama gagal: %v", err)
+	}
+
+	_, err := svc.Create(context.Background(),
+		CreateInput{SlotID: slot, StudentID: mhs[1], Topic: "telat"})
+	if !errors.Is(err, ErrSlotAlreadyBooked) {
+		t.Fatalf("err = %v, mau ErrSlotAlreadyBooked", err)
+	}
+
+	if n := hitungBookingAktif(t, slot); n != 1 {
+		t.Errorf("booking aktif = %d, mau 1", n)
+	}
+}
+
+func TestCreate_BatasTigaBookingAktif(t *testing.T) {
+	bersihkan(t)
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji)
+
+	for i := 0; i < DefaultMaxActiveBookings; i++ {
+		slot := buatSlot(t, dosen, time.Duration(24+i)*time.Hour)
+		if _, err := svc.Create(context.Background(),
+			CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "x"}); err != nil {
+			t.Fatalf("booking ke-%d gagal: %v", i+1, err)
+		}
+	}
+
+	slot := buatSlot(t, dosen, 100*time.Hour)
+	_, err := svc.Create(context.Background(),
+		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "kelebihan"})
+	if !errors.Is(err, ErrLimitReached) {
+		t.Fatalf("err = %v, mau ErrLimitReached", err)
+	}
+}
+
+// Booking yang jadwalnya sudah lewat tidak boleh ikut menahan jatah.
+func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
+	bersihkan(t)
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji)
+
+	// Tiga slot di masa lalu, diisi langsung lewat SQL karena Create wajar saja
+	// menolak slot yang sudah lewat nanti di M3.
+	for i := 1; i <= 3; i++ {
+		slot := buatSlot(t, dosen, -time.Duration(i)*24*time.Hour)
+		_, err := poolUji.Exec(context.Background(), `
+			INSERT INTO bookings (slot_id, student_id, topic) VALUES ($1::uuid, $2::uuid, 'lampau')`,
+			slot, mhs[0])
+		if err != nil {
+			t.Fatalf("menyiapkan booking lampau: %v", err)
+		}
+	}
+
+	slot := buatSlot(t, dosen, 48*time.Hour)
+	if _, err := svc.Create(context.Background(),
+		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "baru"}); err != nil {
+		t.Fatalf("mau sukses, dapat: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------- concurrency
+
+// INI TEST TERPENTING DI SELURUH REPO.
+//
+// 100 goroutine menembak slot yang SAMA pada saat yang bersamaan, masing-masing
+// atas nama mahasiswa yang berbeda. Tepat satu harus menang.
+//
+// Perhatikan channel `mulai`: tanpa itu, goroutine ke-1 sudah selesai sebelum
+// goroutine ke-100 sempat dibuat, dan testnya lulus tanpa pernah ada perebutan.
+// Semua goroutine diblokir di `<-mulai`, lalu `close(mulai)` melepas semuanya
+// dalam satu tarikan. Ini pola barrier standar di Go: menutup channel
+// membangunkan SEMUA yang menunggu sekaligus, bukan satu per satu.
+func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
+	const jumlah = 100
+
+	bersihkan(t)
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, jumlah)
+	slot := buatSlot(t, dosen, 72*time.Hour)
+	svc := NewService(poolUji)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	mulai := make(chan struct{})
+	// Tiap goroutine menulis ke indeksnya SENDIRI, jadi tidak ada dua goroutine
+	// yang menyentuh alamat memori yang sama — aman tanpa mutex. `go test -race`
+	// yang akan membuktikan klaim ini, bukan keyakinan saya.
+	hasil := make([]error, jumlah)
+
+	var wg sync.WaitGroup
+	for i := 0; i < jumlah; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-mulai
+			_, err := svc.Create(ctx, CreateInput{
+				SlotID: slot, StudentID: mhs[i], Topic: "rebutan",
+			})
+			hasil[i] = err
+		}(i)
+	}
+
+	close(mulai)
+	wg.Wait()
+
+	var sukses, konflik int
+	var lain []error
+	for _, err := range hasil {
+		switch {
+		case err == nil:
+			sukses++
+		case errors.Is(err, ErrSlotAlreadyBooked):
+			konflik++
+		default:
+			lain = append(lain, err)
+		}
+	}
+
+	if sukses != 1 {
+		t.Errorf("sukses = %d, mau tepat 1", sukses)
+	}
+	if konflik != jumlah-1 {
+		t.Errorf("konflik = %d, mau %d", konflik, jumlah-1)
+	}
+	// Error jenis lain berarti ada yang salah dan sedang tersamar sebagai
+	// "seolah-olah berhasil ditolak" — misalnya timeout pool atau deadlock.
+	if len(lain) > 0 {
+		t.Errorf("ada %d error di luar dugaan, contoh pertama: %v", len(lain), lain[0])
+	}
+
+	// Hitungan di memori bisa saja benar sementara databasenya kacau.
+	// Kebenaran yang sesungguhnya ada di sini.
+	if n := hitungBookingAktif(t, slot); n != 1 {
+		t.Errorf("baris booking di database = %d, mau 1", n)
+	}
+	if s := statusSlot(t, slot); s != "booked" {
+		t.Errorf("status slot = %q, mau booked", s)
+	}
+}
+
+// Membuktikan langkah 1 (kunci baris mahasiswa) benar-benar bekerja.
+//
+// Satu mahasiswa menembak 10 slot BERBEDA sekaligus. Karena slotnya berbeda,
+// kunci slot tidak menolong sama sekali — tidak ada dua transaksi yang berebut
+// baris yang sama. Yang menahan batas 3 hanyalah kunci pada baris mahasiswa.
+//
+// Kalau `FOR NO KEY UPDATE` di langkah 1 dihapus, test ini akan menyimpan
+// 8-10 booking alih-alih 3.
+func TestCreate_SatuMahasiswaMenembakSepuluhSlotSekaligus(t *testing.T) {
+	const jumlah = 10
+
+	bersihkan(t)
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji)
+
+	slots := make([]string, jumlah)
+	for i := range slots {
+		slots[i] = buatSlot(t, dosen, time.Duration(24+i)*time.Hour)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	mulai := make(chan struct{})
+	hasil := make([]error, jumlah)
+
+	var wg sync.WaitGroup
+	for i := 0; i < jumlah; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-mulai
+			_, err := svc.Create(ctx, CreateInput{
+				SlotID: slots[i], StudentID: mhs[0], Topic: "borong",
+			})
+			hasil[i] = err
+		}(i)
+	}
+
+	close(mulai)
+	wg.Wait()
+
+	var sukses, kenaBatas int
+	var lain []error
+	for _, err := range hasil {
+		switch {
+		case err == nil:
+			sukses++
+		case errors.Is(err, ErrLimitReached):
+			kenaBatas++
+		default:
+			lain = append(lain, err)
+		}
+	}
+
+	if sukses != DefaultMaxActiveBookings {
+		t.Errorf("sukses = %d, mau %d", sukses, DefaultMaxActiveBookings)
+	}
+	if kenaBatas != jumlah-DefaultMaxActiveBookings {
+		t.Errorf("kena batas = %d, mau %d", kenaBatas, jumlah-DefaultMaxActiveBookings)
+	}
+	if len(lain) > 0 {
+		t.Errorf("ada %d error di luar dugaan, contoh pertama: %v", len(lain), lain[0])
+	}
+
+	var tersimpan int
+	if err := poolUji.QueryRow(context.Background(),
+		`SELECT count(*) FROM bookings WHERE student_id = $1::uuid AND status = 'confirmed'`,
+		mhs[0]).Scan(&tersimpan); err != nil {
+		t.Fatalf("menghitung booking: %v", err)
+	}
+	if tersimpan != DefaultMaxActiveBookings {
+		t.Errorf("booking tersimpan = %d, mau %d — batas jebol", tersimpan, DefaultMaxActiveBookings)
+	}
+}
