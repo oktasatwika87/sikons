@@ -9,13 +9,8 @@ import (
 	"github.com/oktasatwika/sikons/internal/httpx"
 )
 
-// userResponse adalah bentuk user yang boleh dilihat dunia luar.
-//
-// Sengaja tipe terpisah dari auth.User, bukan mengembalikan struct domain
-// langsung. Kalau suatu saat ada kolom baru yang sensitif ditambahkan ke
-// auth.User, kolom itu tidak akan otomatis ikut bocor ke response — harus
-// ditambahkan ke sini secara sadar. `password_hash` tidak pernah punya jalan
-// untuk sampai ke sini.
+// ---------------------------------------------------------------- response types
+
 type userResponse struct {
 	ID             string    `json:"id"`
 	Email          string    `json:"email"`
@@ -32,6 +27,35 @@ func keUserResponse(u *auth.User) userResponse {
 		IdentityNumber: u.IdentityNumber, IsActive: u.IsActive, CreatedAt: u.CreatedAt,
 	}
 }
+
+// ---------------------------------------------------------------- cookie
+
+const cookieRefreshToken = "refresh_token"
+
+func cookieRefreshTokenBaru(token string, maxAge int, isDev bool) *http.Cookie {
+	return &http.Cookie{
+		Name:     cookieRefreshToken,
+		Value:    token,
+		Path:     "/api/v1/auth",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   !isDev,
+	}
+}
+
+func hapusCookieRefreshToken() *http.Cookie {
+	return &http.Cookie{
+		Name:     cookieRefreshToken,
+		Value:    "",
+		Path:     "/api/v1/auth",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
+// ---------------------------------------------------------------- register
 
 type registerRequest struct {
 	Email          string `json:"email"`
@@ -79,6 +103,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, map[string]any{"user": keUserResponse(u)})
 }
 
+// ---------------------------------------------------------------- login
+
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -92,7 +118,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hasil, err := s.auth.Login(r.Context(), req.Email, req.Password)
+	hasil, err := s.auth.Login(r.Context(), req.Email, req.Password, r.UserAgent())
 	if err != nil {
 		switch {
 		case errors.Is(err, auth.ErrInvalidCredentials):
@@ -111,16 +137,108 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set refresh token sebagai httpOnly cookie.
+	http.SetCookie(w, cookieRefreshTokenBaru(
+		hasil.RefreshToken,
+		int(auth.RefreshTokenTTL.Seconds()),
+		s.cfg.IsDevelopment(),
+	))
+
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"user":         keUserResponse(hasil.User),
-		"access_token": hasil.AccessToken,
-		"expires_at":   hasil.ExpiresAt,
+		"user":               keUserResponse(hasil.User),
+		"access_token":       hasil.AccessToken,
+		"expires_at":         hasil.ExpiresAt,
+		"refresh_expires_at": hasil.RefreshExpires,
 	})
 }
 
-// handleMe membaca ulang user dari database, tidak sekadar mengembalikan isi
-// token. Token cuma menyimpan id dan role, dan isinya adalah foto lama dari
-// saat login — nama atau status aktif yang berubah setelah itu tidak tercermin.
+// ---------------------------------------------------------------- refresh
+
+func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(cookieRefreshToken)
+	if err != nil {
+		httpx.Error(w, http.StatusUnauthorized, "REFRESH_TOKEN_INVALID",
+			"Sesi habis, silakan login ulang", nil)
+		return
+	}
+
+	plaintextBaru, err := s.auth.RotateRefreshToken(r.Context(), cookie.Value, r.UserAgent())
+	if err != nil {
+		switch {
+		case errors.Is(err, auth.ErrRefreshTokenInvalid):
+			s.log.Warn("refresh token tidak ditemukan", "err", err)
+			httpx.Error(w, http.StatusUnauthorized, "REFRESH_TOKEN_INVALID",
+				"Sesi habis, silakan login ulang", nil)
+		case errors.Is(err, auth.ErrRefreshTokenExpired):
+			s.log.Warn("refresh token kedaluwarsa", "err", err)
+			httpx.Error(w, http.StatusUnauthorized, "REFRESH_TOKEN_EXPIRED",
+				"Sesi habis, silakan login ulang", nil)
+		case errors.Is(err, auth.ErrRefreshTokenReused):
+			// Log level Warn — ini aktivitas mencurigakan, bukan error sistem.
+			s.log.Warn("refresh token reuse terdeteksi — kemungkinan pencurian",
+				"user_agent", r.UserAgent())
+			httpx.Error(w, http.StatusUnauthorized, "REFRESH_TOKEN_REUSED",
+				"Sesi dicabut karena aktivitas mencurigakan, silakan login ulang", nil)
+		default:
+			s.log.Error("refresh token gagal", "err", err)
+			httpx.Internal(w)
+		}
+		return
+	}
+
+	// Buat access token baru. Kita perlu identity dari refresh token, jadi
+	// baca user berdasarkan user_id di baris refresh_token yang valid.
+	userID, err := s.auth.UserIDDariRefreshToken(r.Context(), plaintextBaru)
+	if err != nil {
+		s.log.Error("membaca user dari refresh token", "err", err)
+		httpx.Internal(w)
+		return
+	}
+
+	u, err := s.auth.ByID(r.Context(), userID)
+	if err != nil {
+		s.log.Error("membaca user", "err", err)
+		httpx.Internal(w)
+		return
+	}
+
+	accessToken, expiresAt, err := s.tokens.Issue(auth.Identity{UserID: u.ID, Role: u.Role})
+	if err != nil {
+		s.log.Error("menerbitkan access token", "err", err)
+		httpx.Internal(w)
+		return
+	}
+
+	// Set cookie baru.
+	http.SetCookie(w, cookieRefreshTokenBaru(
+		plaintextBaru,
+		int(auth.RefreshTokenTTL.Seconds()),
+		s.cfg.IsDevelopment(),
+	))
+
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"access_token": accessToken,
+		"expires_at":   expiresAt,
+	})
+}
+
+// ---------------------------------------------------------------- logout
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(cookieRefreshToken)
+	if err == nil {
+		if revokeErr := s.auth.RevokeRefreshToken(r.Context(), cookie.Value); revokeErr != nil {
+			s.log.Error("logout: mencabut refresh token", "err", revokeErr)
+			// Tetap lanjut — cookie akan dihapus，不管 token-nya gagal dicabut.
+		}
+	}
+
+	http.SetCookie(w, hapusCookieRefreshToken())
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---------------------------------------------------------------- /me
+
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	id, ok := auth.IdentityFrom(r.Context())
 	if !ok {

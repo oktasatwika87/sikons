@@ -97,6 +97,8 @@ func (s *Server) Routes() http.Handler {
 		// Terbuka untuk umum.
 		r.Post("/auth/register", s.handleRegister)
 		r.Post("/auth/login", s.handleLogin)
+		r.Post("/auth/refresh", s.handleRefresh)
+		r.Post("/auth/logout", s.handleLogout)
 
 		// Butuh access token. Group membuat middleware hanya berlaku untuk
 		// rute di dalamnya — rute publik di atas tidak ikut terkena.
