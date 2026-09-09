@@ -12,6 +12,7 @@ package httpx
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 )
@@ -33,6 +34,7 @@ const (
 	CodeUnauthorized = "UNAUTHORIZED"
 	CodeForbidden    = "FORBIDDEN"
 	CodeNotFound     = "NOT_FOUND"
+	CodeConflict     = "CONFLICT"
 	CodeInternal     = "INTERNAL_ERROR"
 )
 
@@ -62,4 +64,32 @@ func Internal(w http.ResponseWriter) {
 	// Pesan sengaja generik: detail error internal tidak boleh bocor ke
 	// pengguna. Detail aslinya sudah masuk log.
 	Error(w, http.StatusInternalServerError, CodeInternal, "Terjadi kesalahan pada server", nil)
+}
+
+// batasBodyRequest mencegah satu request mengirim JSON 2 GB dan menghabiskan
+// memori server. Angkanya sengaja kecil: tidak ada endpoint di API ini yang
+// perlu mengirim lebih dari beberapa kilobyte.
+const batasBodyRequest = 64 << 10 // 64 KiB
+
+// DecodeJSON membaca body request ke dalam dst.
+//
+// DisallowUnknownFields dinyalakan supaya field yang tidak dikenal DITOLAK,
+// bukan diabaikan diam-diam. Ini menangkap salah ketik dari sisi klien
+// ("fullname" vs "full_name") saat itu juga, alih-alih membiarkan field itu
+// kosong lalu bingung kenapa datanya hilang.
+func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, batasBodyRequest)
+
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	// Body harus berisi TEPAT satu objek JSON. Tanpa pemeriksaan ini,
+	// `{"a":1}{"b":2}` diterima dan objek keduanya hilang tanpa jejak.
+	if err := dec.Decode(&struct{}{}); err == nil {
+		return errors.New("body harus berisi satu objek JSON")
+	}
+	return nil
 }

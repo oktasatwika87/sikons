@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/oktasatwika/sikons/internal/auth"
 	"github.com/oktasatwika/sikons/internal/config"
 )
 
@@ -23,9 +24,24 @@ import (
 // pakai global, test tidak bisa lagi menjalankan dua konfigurasi berbeda
 // secara paralel, dan tidak ada yang bisa menukar db dengan versi palsu.
 type Server struct {
-	cfg config.Config
-	db  DB
-	log *slog.Logger
+	cfg    config.Config
+	db     DB
+	auth   *auth.Service
+	tokens *auth.TokenIssuer
+	log    *slog.Logger
+}
+
+// Deps dikumpulkan dalam satu struct, bukan dijadikan parameter berjejer.
+//
+// Alasannya praktis: tiap milestone menambah satu dependency baru (booking di
+// M3, notifikasi di M4). Dengan parameter berjejer, setiap penambahan mengubah
+// signature New dan memaksa semua pemanggil — termasuk setiap test — ikut
+// diedit. Dengan struct, penambahan field tidak merusak apa pun yang sudah ada.
+type Deps struct {
+	DB     DB
+	Auth   *auth.Service
+	Tokens *auth.TokenIssuer
+	Log    *slog.Logger
 }
 
 // DB sengaja didefinisikan di SINI, di package yang MEMAKAINYA, bukan di
@@ -44,8 +60,14 @@ type DB interface {
 	Ping(ctx context.Context) error
 }
 
-func New(cfg config.Config, db DB, log *slog.Logger) *Server {
-	return &Server{cfg: cfg, db: db, log: log}
+func New(cfg config.Config, deps Deps) *Server {
+	return &Server{
+		cfg:    cfg,
+		db:     deps.DB,
+		auth:   deps.Auth,
+		tokens: deps.Tokens,
+		log:    deps.Log,
+	}
 }
 
 // Routes mengembalikan http.Handler, bukan *chi.Mux.
@@ -72,7 +94,16 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/readyz", s.handleReadyz)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// Diisi mulai M2 (auth), M3 (booking).
+		// Terbuka untuk umum.
+		r.Post("/auth/register", s.handleRegister)
+		r.Post("/auth/login", s.handleLogin)
+
+		// Butuh access token. Group membuat middleware hanya berlaku untuk
+		// rute di dalamnya — rute publik di atas tidak ikut terkena.
+		r.Group(func(r chi.Router) {
+			r.Use(s.requireAuth)
+			r.Get("/me", s.handleMe)
+		})
 	})
 
 	return r

@@ -21,11 +21,10 @@ type dbPalsu struct{ err error }
 func (d dbPalsu) Ping(context.Context) error { return d.err }
 
 func serverUji(db DB) *Server {
-	return New(
-		config.Config{Env: "test"},
-		db,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-	)
+	return New(config.Config{Env: "test"}, Deps{
+		DB:  db,
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 }
 
 func panggil(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {

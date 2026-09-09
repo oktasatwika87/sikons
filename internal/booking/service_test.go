@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -62,13 +63,21 @@ func TestMain(m *testing.M) {
 
 // ---------------------------------------------------------------- helper
 
-func bersihkan(t *testing.T) {
-	t.Helper()
-	_, err := poolUji.Exec(context.Background(),
-		`TRUNCATE users, lecturer_profiles, slots, bookings, notifications CASCADE`)
-	if err != nil {
-		t.Fatalf("membersihkan tabel: %v", err)
-	}
+// Tidak ada TRUNCATE di file ini, dan itu disengaja.
+//
+// `go test ./...` menjalankan test antar-package SECARA PARALEL. Package lain
+// yang memakai database uji yang sama akan menghapus data package ini di
+// tengah jalan, dan gejalanya menyesatkan: "mahasiswa tidak ditemukan" pada
+// mahasiswa yang jelas-jelas baru dibuat tiga baris sebelumnya.
+//
+// Isolasi yang benar bukan membersihkan meja sebelum mulai, melainkan memakai
+// meja sendiri: setiap test membuat data dengan pengenal yang unik, dan setiap
+// pemeriksaan disaring berdasarkan pengenal itu. Dengan begitu test ini aman
+// dijalankan berbarengan dengan apa pun.
+var penghitungUnik atomic.Int64
+
+func unik() string {
+	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), penghitungUnik.Add(1))
 }
 
 func buatDosen(t *testing.T) string {
@@ -76,8 +85,8 @@ func buatDosen(t *testing.T) string {
 	var id string
 	err := poolUji.QueryRow(context.Background(), `
 		INSERT INTO users (email, password_hash, full_name, role)
-		VALUES ('dosen@uji.local', 'x', 'Dosen Uji', 'lecturer')
-		RETURNING id::text`).Scan(&id)
+		VALUES ('dosen-' || $1 || '@uji.local', 'x', 'Dosen Uji', 'lecturer')
+		RETURNING id::text`, unik()).Scan(&id)
 	if err != nil {
 		t.Fatalf("membuat dosen: %v", err)
 	}
@@ -93,9 +102,9 @@ func buatMahasiswa(t *testing.T, jumlah int) []string {
 	t.Helper()
 	rows, err := poolUji.Query(context.Background(), `
 		INSERT INTO users (email, password_hash, full_name, role)
-		SELECT 'mhs' || i || '@uji.local', 'x', 'Mahasiswa ' || i, 'student'
+		SELECT 'mhs-' || $2 || '-' || i || '@uji.local', 'x', 'Mahasiswa ' || i, 'student'
 		FROM generate_series(1, $1) i
-		RETURNING id::text`, jumlah)
+		RETURNING id::text`, jumlah, unik())
 	if err != nil {
 		t.Fatalf("membuat mahasiswa: %v", err)
 	}
@@ -156,7 +165,6 @@ func statusSlot(t *testing.T, slotID string) string {
 // ---------------------------------------------------------------- test dasar
 
 func TestCreate_SuksesSaatSlotMasihOpen(t *testing.T) {
-	bersihkan(t)
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
 	slot := buatSlot(t, dosen, 72*time.Hour)
@@ -180,7 +188,6 @@ func TestCreate_SuksesSaatSlotMasihOpen(t *testing.T) {
 }
 
 func TestCreate_SlotTidakAda(t *testing.T) {
-	bersihkan(t)
 	mhs := buatMahasiswa(t, 1)
 
 	_, err := NewService(poolUji).Create(context.Background(), CreateInput{
@@ -193,7 +200,6 @@ func TestCreate_SlotTidakAda(t *testing.T) {
 }
 
 func TestCreate_SlotSudahDipesanOrangLain(t *testing.T) {
-	bersihkan(t)
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 2)
 	slot := buatSlot(t, dosen, 72*time.Hour)
@@ -216,7 +222,6 @@ func TestCreate_SlotSudahDipesanOrangLain(t *testing.T) {
 }
 
 func TestCreate_BatasTigaBookingAktif(t *testing.T) {
-	bersihkan(t)
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
 	svc := NewService(poolUji)
@@ -239,7 +244,6 @@ func TestCreate_BatasTigaBookingAktif(t *testing.T) {
 
 // Booking yang jadwalnya sudah lewat tidak boleh ikut menahan jatah.
 func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
-	bersihkan(t)
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
 	svc := NewService(poolUji)
@@ -278,7 +282,6 @@ func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
 func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 	const jumlah = 100
 
-	bersihkan(t)
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, jumlah)
 	slot := buatSlot(t, dosen, 72*time.Hour)
@@ -355,7 +358,6 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 func TestCreate_SatuMahasiswaMenembakSepuluhSlotSekaligus(t *testing.T) {
 	const jumlah = 10
 
-	bersihkan(t)
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
 	svc := NewService(poolUji)
