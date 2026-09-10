@@ -340,6 +340,8 @@ func (s *Service) GetByID(ctx context.Context, bookingID, requesterID, requester
 		if view.LecturerID != requesterID {
 			return nil, ErrBookingNotFound
 		}
+	default:
+		return nil, ErrBookingNotFound
 	}
 	return view, nil
 }
