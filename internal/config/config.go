@@ -31,6 +31,8 @@ type Config struct {
 	ReminderLeadHours    int           // berapa jam sebelum slot reminder dikirim
 	ReminderPollInterval time.Duration // interval polling worker
 	ReminderMaxAttempts  int           // maks percobaan kirim email
+	// CORS untuk frontend Next.js.WAJIB diganti ke domain frontend asli saat deploy.
+	CORSAllowedOrigins []string
 }
 
 // Load membaca env dan mengembalikan error kalau ada yang wajib tapi kosong.
@@ -132,6 +134,21 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("REMINDER_MAX_ATTEMPTS %q harus angka positif: %w", m, err)
 		}
 		cfg.ReminderMaxAttempts = n
+	}
+
+	// CORSAllowedOrigins: daftar origin yang boleh cross-origin request.
+	// Default dev: localhost:3000. Kalau CORS_ALLOWED_ORIGINS di-set, default
+	// tidak dipakai — origin yang di-set di env adalah SATU-SATUNYA yang
+	// diizinkan (localhost tidak bocor ke production).
+	cfg.CORSAllowedOrigins = []string{"http://localhost:3000"}
+	if origins := os.Getenv("CORS_ALLOWED_ORIGINS"); origins != "" {
+		cfg.CORSAllowedOrigins = nil
+		for _, o := range strings.Split(origins, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				cfg.CORSAllowedOrigins = append(cfg.CORSAllowedOrigins, o)
+			}
+		}
 	}
 
 	// Dikumpulkan dulu semuanya, baru dilaporkan sekaligus. Melaporkan satu
