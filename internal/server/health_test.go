@@ -10,31 +10,26 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/oktasatwika/sikons/internal/config"
 )
 
-// dbPalsu memenuhi interface Pool. Tidak ada library mocking, tidak ada code
+// dbPalsu memenuhi interface DB. Tidak ada library mocking, tidak ada code
 // generation — cukup struct kecil dengan method yang sama.
 type dbPalsu struct{ err error }
 
 func (d dbPalsu) Ping(context.Context) error { return d.err }
-func (d dbPalsu) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	return nil, d.err
-}
-func (d dbPalsu) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	return rowPalsu{err: d.err}
-}
 
+// rowPalsu dipakai oleh test yang ingin mensimulasikan satu query gagal.
+// Tanpa rowPalsu, test healthz akan butuh Postgres hidup hanya untuk
+// memvalidasi respons error. Itu beban yang tidak perlu.
 type rowPalsu struct{ err error }
 
-func (rowPalsu) Scan(dst ...any) error { return rowPalsu{}.err }
+func (r rowPalsu) Scan(_ ...any) error { return r.err }
 
-func serverUji(db Pool) *Server {
+func serverUji(db DB) *Server {
 	return New(config.Config{Env: "test"}, Deps{
-		Pool: db,
-		Log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:  db,
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 }
 
@@ -96,5 +91,15 @@ func TestRouteTidakDikenalBalas404(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, mau %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// rowPalsu mensimulasikan query yang gagal Scan. Test ini memastikan kode
+// path "baris tidak bisa dibaca" tidak crash diam-diam.
+func TestRowPalsu_MengembalikanErrornyaSendiri(t *testing.T) {
+	ingin := errors.New("baris tidak bisa dibaca")
+	r := rowPalsu{err: ingin}
+	if err := r.Scan(); !errors.Is(err, ingin) {
+		t.Errorf("Scan = %v, mau %v", err, ingin)
 	}
 }

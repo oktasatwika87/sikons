@@ -69,7 +69,7 @@ func run() error {
 	srv := &http.Server{
 		Addr: ":" + cfg.HTTPPort,
 		Handler: server.New(cfg, server.Deps{
-			Pool:         pool,
+			DB:           pool,
 			Auth:         auth.NewService(pool, tokens, log),
 			Tokens:       tokens,
 			Log:          log,

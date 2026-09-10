@@ -1,16 +1,15 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/oktasatwika/sikons/internal/auth"
 	"github.com/oktasatwika/sikons/internal/booking"
@@ -44,17 +43,17 @@ type slotRef struct {
 }
 
 type personRef struct {
-	ID              string `json:"id"`
-	FullName        string `json:"full_name"`
-	Department      string `json:"department,omitempty"`
-	IdentityNumber  string `json:"identity_number,omitempty"`
+	ID             string `json:"id"`
+	FullName       string `json:"full_name"`
+	Department     string `json:"department,omitempty"`
+	IdentityNumber string `json:"identity_number,omitempty"`
 }
 
 type bookingListResponse struct {
 	Bookings []bookingResponse `json:"bookings"`
-	Page     int              `json:"page"`
-	PerPage  int              `json:"per_page"`
-	Total    int              `json:"total"`
+	Page     int               `json:"page"`
+	PerPage  int               `json:"per_page"`
+	Total    int               `json:"total"`
 }
 
 // ---------------------------------------------------------------- handler
@@ -81,16 +80,18 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validasi topic: wajib 3..200 karakter.
+	// Validasi topic: wajib 3..200 karakter (diukur dalam RUNA, bukan byte —
+	// satu emoji harus dihitung satu karakter).
 	req.Topic = strings.TrimSpace(req.Topic)
-	if len(req.Topic) < 3 || len(req.Topic) > 200 {
+	topicRunes := utf8.RuneCountInString(req.Topic)
+	if topicRunes < 3 || topicRunes > 200 {
 		httpx.Error(w, http.StatusUnprocessableEntity, httpx.CodeValidation,
 			"topic wajib 3 sampai 200 karakter", nil)
 		return
 	}
 
 	// Validasi description: maksimal 2000 karakter.
-	if len(req.Description) > 2000 {
+	if utf8.RuneCountInString(req.Description) > 2000 {
 		httpx.Error(w, http.StatusUnprocessableEntity, httpx.CodeValidation,
 			"description maksimal 2000 karakter", nil)
 		return
@@ -109,13 +110,13 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	// ComputeRequestHash dari field yang sudah di-decode dan di-trim.
 	requestHash := booking.ComputeRequestHash(req.SlotID, req.Topic, req.Description)
 
-	b, replay, err := s.booking.Create(r.Context(), booking.CreateInput{
-		SlotID:          req.SlotID,
-		StudentID:        id.UserID,
-		Topic:            req.Topic,
-		Description:      req.Description,
-		IdempotencyKey:  idempotencyKey,
-		RequestHash:      requestHash,
+	result, err := s.booking.Create(r.Context(), booking.CreateInput{
+		SlotID:         req.SlotID,
+		StudentID:      id.UserID,
+		Topic:          req.Topic,
+		Description:    req.Description,
+		IdempotencyKey: idempotencyKey,
+		RequestHash:    requestHash,
 	})
 	if err != nil {
 		switch {
@@ -133,7 +134,8 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 				"Batas 3 booking aktif sudah tercapai", nil)
 		case errors.Is(err, booking.ErrSlotTooSoon):
 			httpx.Error(w, http.StatusUnprocessableEntity, "SLOT_TOO_SOON",
-				"Minimal 60 menit sebelum konsultasi", nil)
+				fmt.Sprintf("Minimal %d menit sebelum konsultasi",
+					s.booking.MinLeadMinutes()), nil)
 		case errors.Is(err, booking.ErrIdempotencyReused):
 			httpx.Error(w, http.StatusUnprocessableEntity, "IDEMPOTENCY_KEY_REUSED",
 				"Idempotency-Key sudah dipakai dengan request berbeda", nil)
@@ -150,35 +152,13 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kalau replay, ambil booking yang sudah ada dan kembalikan.
-	if replay && idempotencyKey != "" {
-		// Ambil booking yang sudah ada berdasarkan slot_id dan student_id.
-		var bookingID string
-		err = s.db.QueryRow(r.Context(), `
-			SELECT b.id::text FROM bookings b
-			WHERE b.slot_id = $1::uuid AND b.student_id = $2::uuid
-			ORDER BY b.created_at DESC LIMIT 1`,
-			req.SlotID, id.UserID,
-		).Scan(&bookingID)
-		if err != nil {
-			s.log.Warn("gagal ambil booking replay, generate dari b", "err", err)
-			// Fallback: kalau b ada, pakai itu.
-			if b != nil {
-				w.Header().Set("Idempotency-Replayed", "true")
-				httpx.JSON(w, http.StatusCreated, map[string]string{"id": b.ID})
-				return
-			}
-			// Tidak ada booking, generate 500.
-			s.log.Error("replay tanpa booking", "err", err)
-			httpx.Internal(w)
-			return
-		}
+	if result.Replay {
 		w.Header().Set("Idempotency-Replayed", "true")
-		httpx.JSON(w, http.StatusCreated, map[string]string{"id": bookingID})
-		return
 	}
-
-	httpx.JSON(w, http.StatusCreated, map[string]string{"id": b.ID})
+	// Body sudah jadi JSON yang valid (disusun di service).
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(result.Status)
+	_, _ = w.Write(result.Body)
 }
 
 func (s *Server) handleListBookings(w http.ResponseWriter, r *http.Request) {
@@ -221,15 +201,15 @@ func (s *Server) handleListBookings(w http.ResponseWriter, r *http.Request) {
 	// Role dari token, bukan dari query.
 	// Menerima role dari query membuka pintu yang tidak perlu ada:
 	// frontend tidak butuh fitur "lihat booking orang lain atas nama admin".
-	var bookings []booking.Booking
+	var views []booking.BookingView
 	var total int
 	var err error
 
 	switch id.Role {
 	case auth.RoleStudent:
-		bookings, total, err = s.booking.ListByStudent(r.Context(), id.UserID, status, page, perPage)
+		views, total, err = s.booking.ListByStudent(r.Context(), id.UserID, status, page, perPage)
 	case auth.RoleLecturer:
-		bookings, total, err = s.booking.ListByLecturer(r.Context(), id.UserID, status, page, perPage)
+		views, total, err = s.booking.ListByLecturer(r.Context(), id.UserID, status, page, perPage)
 	default:
 		httpx.Error(w, http.StatusForbidden, httpx.CodeForbidden,
 			"Role ini tidak memiliki booking", nil)
@@ -242,15 +222,9 @@ func (s *Server) handleListBookings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ambil detail slot dan person untuk setiap booking.
-	responses := make([]bookingResponse, 0, len(bookings))
-	for _, b := range bookings {
-		resp, err := s.enrichBooking(r.Context(), &b, id.Role)
-		if err != nil {
-			s.log.Warn("gagal enrich booking", "booking_id", b.ID, "err", err)
-			continue
-		}
-		responses = append(responses, *resp)
+	responses := make([]bookingResponse, 0, len(views))
+	for i := range views {
+		responses = append(responses, viewToResponse(&views[i], id.Role))
 	}
 
 	httpx.JSON(w, http.StatusOK, bookingListResponse{
@@ -275,9 +249,9 @@ func (s *Server) handleGetBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	b, err := s.booking.GetByID(r.Context(), bookingID)
+	view, err := s.booking.GetByID(r.Context(), bookingID, id.UserID, id.Role)
 	if err != nil {
-		if errors.Is(err, booking.ErrSlotNotFound) {
+		if errors.Is(err, booking.ErrBookingNotFound) {
 			// Tidak ada bedanya 404 antara "tidak ada" dan "milik orang lain".
 			// Ini konsisten dengan keputusan di availability handlers.
 			httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
@@ -289,103 +263,40 @@ func (s *Server) handleGetBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cek kepemilikan: mahasiswa hanya lihat miliknya, dosen lihat di slotnya.
-	switch id.Role {
-	case auth.RoleStudent:
-		if b.StudentID != id.UserID {
-			httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
-				"Booking tidak ditemukan", nil)
-			return
-		}
-	case auth.RoleLecturer:
-		var lecturerID string
-		err = s.db.QueryRow(r.Context(), `
-			SELECT lecturer_id::text FROM slots WHERE id = $1::uuid`,
-			b.SlotID,
-		).Scan(&lecturerID)
-		if err != nil || lecturerID != id.UserID {
-			httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
-				"Booking tidak ditemukan", nil)
-			return
-		}
-	default:
-		httpx.Error(w, http.StatusForbidden, httpx.CodeForbidden,
-			"Role ini tidak memiliki akses ke booking", nil)
-		return
-	}
-
-	resp, err := s.enrichBooking(r.Context(), b, id.Role)
-	if err != nil {
-		s.log.Error("enrich booking", "err", err)
-		httpx.Internal(w)
-		return
-	}
-
-	httpx.JSON(w, http.StatusOK, resp)
+	httpx.JSON(w, http.StatusOK, viewToResponse(view, id.Role))
 }
 
-// enrichBooking mengambil detail slot dan person untuk satu booking.
-func (s *Server) enrichBooking(ctx context.Context, b *booking.Booking, role string) (*bookingResponse, error) {
-	var slotStart, slotEnd time.Time
-	var lecturerID string
-	err := s.db.QueryRow(ctx, `
-		SELECT start_at, end_at, lecturer_id::text
-		FROM slots WHERE id = $1::uuid`,
-		b.SlotID,
-	).Scan(&slotStart, &slotEnd, &lecturerID)
-	if err != nil {
-		return nil, fmt.Errorf("ambil slot: %w", err)
-	}
-
+// viewToResponse menerjemahkan BookingView jadi DTO HTTP sesuai peran pemanggil.
+// field person yang tidak relevan (mahasiswa untuk student, dosen untuk lecturer)
+// sengaja tidak dimunculkan agar klien tidak bingung mana yang harus dipakai.
+func viewToResponse(v *booking.BookingView, role string) bookingResponse {
 	resp := bookingResponse{
-		ID:          b.ID,
-		Status:      b.Status,
-		Topic:       b.Topic,
-		Description: b.Description,
-		CreatedAt:   b.CreatedAt.Format(time.RFC3339),
+		ID:          v.ID,
+		Status:      v.Status,
+		Topic:       v.Topic,
+		Description: v.Description,
+		CreatedAt:   v.CreatedAt.Format(time.RFC3339),
 		Slot: slotRef{
-			ID:      b.SlotID,
-			StartAt: slotStart.Format(time.RFC3339),
-			EndAt:   slotEnd.Format(time.RFC3339),
+			ID:      v.SlotID,
+			StartAt: v.SlotStart.Format(time.RFC3339),
+			EndAt:   v.SlotEnd.Format(time.RFC3339),
 		},
 	}
-
 	switch role {
 	case auth.RoleStudent:
-		var fullName, department string
-		err = s.db.QueryRow(ctx, `
-			SELECT u.full_name, coalesce(lp.department, '')
-			FROM users u
-			JOIN lecturer_profiles lp ON lp.user_id = u.id
-			WHERE u.id = $1::uuid`,
-			lecturerID,
-		).Scan(&fullName, &department)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("ambil dosen: %w", err)
-		}
 		resp.Lecturer = &personRef{
-			ID:         lecturerID,
-			FullName:   fullName,
-			Department: department,
+			ID:         v.LecturerID,
+			FullName:   v.LecturerFullName,
+			Department: v.LecturerDepartment,
 		}
 	case auth.RoleLecturer:
-		var fullName, identityNumber string
-		err = s.db.QueryRow(ctx, `
-			SELECT full_name, coalesce(identity_number, '')
-			FROM users WHERE id = $1::uuid`,
-			b.StudentID,
-		).Scan(&fullName, &identityNumber)
-		if err != nil {
-			return nil, fmt.Errorf("ambil mahasiswa: %w", err)
-		}
 		resp.Student = &personRef{
-			ID:             b.StudentID,
-			FullName:       fullName,
-			IdentityNumber: identityNumber,
+			ID:             v.StudentID,
+			FullName:       v.StudentFullName,
+			IdentityNumber: v.StudentIdentity,
 		}
 	}
-
-	return &resp, nil
+	return resp
 }
 
 // isValidUUID memvalidasi format UUID.
