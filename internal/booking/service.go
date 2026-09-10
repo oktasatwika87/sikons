@@ -631,73 +631,10 @@ func (s *Service) Cancel(ctx context.Context, bookingID, studentID, reason strin
 		return nil, ErrBookingAlreadyFinalized
 	}
 
-	// Langkah 4: cek H-3 jam. now() Postgres melawan start_at yang sudah dikurang 3 jam.
-	// Kalau slot mulai 5 jam lagi, start_at - 3 jam = 2 jam lagi. now() < 2 jam lagi -> TRUE ->
-	// tidakTerlaluDekat = TRUE -> boleh cancel.
-	// Kalau slot mulai 2 jam lagi, start_at - 3 jam = -1 jam lalu. now() >= -1 jam lalu -> TRUE ->
-	// tidakTerlaluDekat = TRUE -> boleh cancel? Tidak! Harus FALSE.
-	//
-	// Spec: mahasiswa boleh cancel kalau sekarang >= start_at - 3 jam.
-	// Start dalam 5 jam: sekarang 0 >= 2 jam lagi? FALSE. Seharusnya FALSE.
-	// Start dalam 2 jam: sekarang 0 >= -1 jam lalu? TRUE. Seharusnya FALSE (terlalu dekat).
-	//
-	// Jadi check yang benar: sekarang harus SUDAH LEWAT start_at - 3 jam.
-	// start_at = sekarang + 5 jam -> start_at - 3 jam = sekarang + 2 jam. Sekarang BELUM sampai situ -> FALSE.
-	// start_at = sekarang + 2 jam -> start_at - 3 jam = sekarang - 1 jam. Sekarang SUDAH lewat -> TRUE.
-	// WAIT, ini terbalik! Spec mengatakan H-3 jam berarti:
-// kalau sekarang >= start_at - 3 jam, MAKA boleh cancel.
-// Start dalam 5 jam: 0 >= 2 jam dari sekarang? FALSE -> tidak boleh cancel?
-// Itu jelas salah. Spec harusnya: mahasiswa TIDAK BOLEH cancel kalau < 3 jam.
-// Jadi check yang benar: sekarang < start_at - 3 jam -> ErrCancelTooLate.
-// Atau equivalently: sekarang >= start_at - 3 jam -> boleh.
-	//
-	// Kalau slot mulai 5 jam dari sekarang:
-	// start_at - 3 jam = 2 jam dari sekarang.
-	// sekarang >= 2 jam dari sekarang? FALSE.
-	// Hasil FALSE -> !FALSE = TRUE -> ErrCancelTooLate.
-	// Itu terbalik!
-	//
-	// Saya pikir saya salah baca spec. Spec harusnya:
-// "pembatalan H-3 jam" = "tidak boleh cancel kalau < 3 jam sebelum jadwal"
-// = "boleh cancel kalau >= 3 jam sebelum jadwal"
-	//
-	// Check: sekarang < start_at - 3 jam -> ErrCancelTooLate.
-	// Start dalam 5 jam: sekarang < 2 jam dari sekarang? FALSE -> OK.
-	// Start dalam 2 jam: sekarang < -1 jam lalu? FALSE -> OK? Itu juga salah!
-	//
-	// Mari saya hitung ulang dengan contoh:
-	// Kalau H-3 jam dan slot mulai jam 10.00, mahasiswa boleh cancel sebelum jam 07.00.
-	// Kalau sekarang jam 08.00, 08.00 < 07.00? FALSE. Tapi harusnya ErrCancelTooLate karena
-	// hanya 2 jam sebelum jadwal, kurang dari 3 jam.
-	//
-	// check: sekarang >= start_at - 3 jam?
-	// 08.00 >= 07.00? TRUE -> boleh cancel? Itu SALAH!
-	//
-	// Jadi spec harusnya DIBALIK: mahasiswa BOLEH cancel kalau >= 3 jam SEBELUM jadwal.
-	// check: sekarang >= start_at - 3 jam?
-	// 08.00 >= 07.00? TRUE -> boleh? Itu SALAH karena baru 2 jam sebelumnya.
-	//
-	// Hmm, spec yang benar:
-// "mahasiswa boleh cancel H-3 jam" berarti: interval antara sekarang dan jadwal >= 3 jam.
-// Interval = start_at - now(). >= 3 jam = start_at >= now() + 3 jam.
-	//
-	// Check: start_at >= now() + 3 jam -> boleh cancel.
-	// Start dalam 5 jam: 5 jam >= 3 jam? TRUE -> boleh.
-	// Start dalam 2 jam: 2 jam >= 3 jam? FALSE -> ErrCancelTooLate.
-	//
-	// Atau dalam SQL:
-	// start_at >= now() + make_interval(hours => $2)
-	//
-	// Tapi spec spec meminta "pembatalan H-3 jam" = TIDAK boleh cancel kalau < 3 jam sebelumnya.
-	// Jadi check: start_at - now() < 3 jam -> ErrCancelTooLate.
-	//
-	// start_at - now() < make_interval(hours => $2)
-	// Atau: NOT (start_at - now() >= make_interval(hours => $2))
-	// Atau: start_at < now() + make_interval(hours => $2)
-	//
-	// Check di SQL:
-	// Langkah 4: cek H-3 jam. Mahasiswa tidak boleh cancel kalau < 3 jam sebelum jadwal.
-	// Check: start_at < now() + 3 jam -> terlalu dekat (tidak boleh cancel).
+	// Langkah 4: cek H-3 jam. Mahasiswa tidak boleh cancel kalau kurang dari
+	// cancelMinHours jam sebelum slot mulai.
+	// Contoh: cancelMinHours=3, slot mulai 5 jam lagi -> boleh cancel.
+	//         cancelMinHours=3, slot mulai 2 jam lagi -> ErrCancelTooLate.
 	var terlaluDekat bool
 	err = tx.QueryRow(ctx, `
 		SELECT $1::timestamptz < (now() + make_interval(hours => $2))`,
@@ -900,6 +837,7 @@ func (s *Service) NoShow(ctx context.Context, bookingID, lecturerID string) (*Bo
 	}
 	return view, nil
 }
+// ComputeRequestHash menghitung hash dari isi request booking yang relevan,
 // diurutkan secara deterministik: slot_id + newline + topic + newline + description.
 func ComputeRequestHash(slotID, topic, description string) string {
 	data := slotID + "\n" + topic + "\n" + description
