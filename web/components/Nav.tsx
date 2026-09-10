@@ -23,6 +23,9 @@ export function Nav() {
         </Link>
 
         <div className="flex items-center gap-3">
+          <Link href="/dosen" className="text-sm hover:underline">
+            Cari Dosen
+          </Link>
           {auth.status === "loading" ? (
             <span className="text-sm text-muted-foreground">Memuat…</span>
           ) : auth.status === "authenticated" && auth.user ? (
