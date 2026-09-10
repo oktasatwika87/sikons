@@ -174,11 +174,11 @@ func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 			// Gagal kirim. Increment attempts dan periksa apakah sudah max.
 			newAttempts := r.attempts + 1
 			if newAttempts >= s.maxAttempts {
-				// Sudah intentos maximum. Tandai failed.
+				// Sudah mencapai batas percobaan. Tandai failed.
 				_, execErr := tx.Exec(ctx, `
 					UPDATE notifications
 					SET status = 'failed', attempts = $2,
-					    last_error = $3, sent_at = now()
+					    last_error = $3
 					WHERE id = $1::uuid`,
 					r.id, newAttempts, truncateError(sendErr))
 				if execErr != nil {

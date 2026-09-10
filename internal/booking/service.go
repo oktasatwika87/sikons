@@ -23,19 +23,19 @@ import (
 // perilaku penguncian baris Postgres — database palsu tidak membuktikan
 // apa pun tentang itu.
 type Service struct {
-	pool             *pgxpool.Pool
-	maxActive        int
-	minLeadMinutes   int
-	cancelMinHours   int
+	pool              *pgxpool.Pool
+	maxActive         int
+	minLeadMinutes    int
+	cancelMinHours    int
 	reminderLeadHours int
 }
 
 func NewService(pool *pgxpool.Pool, minLeadMinutes, cancelMinHours, reminderLeadHours int) *Service {
 	return &Service{
-		pool:             pool,
-		maxActive:        DefaultMaxActiveBookings,
-		minLeadMinutes:   minLeadMinutes,
-		cancelMinHours:   cancelMinHours,
+		pool:              pool,
+		maxActive:         DefaultMaxActiveBookings,
+		minLeadMinutes:    minLeadMinutes,
+		cancelMinHours:    cancelMinHours,
 		reminderLeadHours: reminderLeadHours,
 	}
 }
@@ -875,6 +875,7 @@ func (s *Service) NoShow(ctx context.Context, bookingID, lecturerID string) (*Bo
 	}
 	return view, nil
 }
+
 // ComputeRequestHash menghitung hash dari isi request booking yang relevan,
 // diurutkan secara deterministik: slot_id + newline + topic + newline + description.
 func ComputeRequestHash(slotID, topic, description string) string {

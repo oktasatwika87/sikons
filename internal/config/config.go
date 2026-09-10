@@ -14,24 +14,24 @@ import (
 )
 
 type Config struct {
-	Env                  string // "development" | "production"
-	HTTPPort             string
-	DatabaseURL           string
-	RedisURL             string
-	LogLevel             slog.Level
-	JWTSecret            string
-	AccessTokenTTL       time.Duration
-	CampusTZ             *time.Location // zona waktu kampus, misal Asia/Jakarta
-	SlotHorizonDays      int             // berapa hari ke depan slot harus di-generate
-	BookingMinLeadMin    int             // minimal menit sebelum slot boleh dipesan
-	BookingCancelMinHrs  int             // minimal jam sebelum slot boleh dibatalkan mahasiswa
+	Env                 string // "development" | "production"
+	HTTPPort            string
+	DatabaseURL         string
+	RedisURL            string
+	LogLevel            slog.Level
+	JWTSecret           string
+	AccessTokenTTL      time.Duration
+	CampusTZ            *time.Location // zona waktu kampus, misal Asia/Jakarta
+	SlotHorizonDays     int            // berapa hari ke depan slot harus di-generate
+	BookingMinLeadMin   int            // minimal menit sebelum slot boleh dipesan
+	BookingCancelMinHrs int            // minimal jam sebelum slot boleh dibatalkan mahasiswa
 	// Reminder: tidak wajib di config.Load() karena cmd/api tidak mengirim email.
 	// cmd/worker memvalidasi sendiri bahwa ResendAPIKey tidak kosong.
 	ResendAPIKey         string
-	EmailFrom            string          // default "SIKONS <onboarding@resend.dev>"
-	ReminderLeadHours    int             // berapa jam sebelum slot reminder dikirim
-	ReminderPollInterval time.Duration   // interval polling worker
-	ReminderMaxAttempts  int            // maks percobaan kirim email
+	EmailFrom            string        // default "SIKONS <onboarding@resend.dev>"
+	ReminderLeadHours    int           // berapa jam sebelum slot reminder dikirim
+	ReminderPollInterval time.Duration // interval polling worker
+	ReminderMaxAttempts  int           // maks percobaan kirim email
 }
 
 // Load membaca env dan mengembalikan error kalau ada yang wajib tapi kosong.

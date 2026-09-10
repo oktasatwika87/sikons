@@ -7,6 +7,7 @@
 /tmp/
 /sikons
 /seed
+/worker
 
 # Go
 *.test
