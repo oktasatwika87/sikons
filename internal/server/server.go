@@ -9,11 +9,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 
 	"github.com/oktasatwika/sikons/internal/auth"
 	"github.com/oktasatwika/sikons/internal/availability"
 	"github.com/oktasatwika/sikons/internal/booking"
 	"github.com/oktasatwika/sikons/internal/config"
+	"github.com/oktasatwika/sikons/internal/lecturer"
 	"github.com/oktasatwika/sikons/internal/slotgen"
 )
 
@@ -34,6 +36,7 @@ type Server struct {
 	availability *availability.Service
 	booking      *booking.Service
 	slotgen      *slotgen.Service
+	lecturer     *lecturer.Service
 	slotHorizon  int // hari, untuk rekonsiliasi
 }
 
@@ -51,6 +54,7 @@ type Deps struct {
 	Availability *availability.Service
 	Booking      *booking.Service
 	Slotgen      *slotgen.Service
+	Lecturer     *lecturer.Service
 }
 
 // DB sengaja didefinisikan di SINI, di package yang MEMAKAINYA, bukan di
@@ -79,6 +83,7 @@ func New(cfg config.Config, deps Deps) *Server {
 		availability: deps.Availability,
 		booking:      deps.Booking,
 		slotgen:      deps.Slotgen,
+		lecturer:     deps.Lecturer,
 		slotHorizon:  cfg.SlotHorizonDays,
 	}
 }
@@ -93,6 +98,17 @@ func New(cfg config.Config, deps Deps) *Server {
 // yang ingin kamu tegakkan, seperti di sini.
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
+
+	// CORS harus paling awal — sebelum middleware lain yang bisa mengirim header.
+	// Dipakai untuk mengizinkan Next.js (M5) mengakses API dari origin berbeda.
+	corsHandler := cors.Handler(cors.Options{
+		AllowedOrigins:   s.cfg.CORSAllowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization", "Idempotency-Key"},
+		AllowCredentials: true,
+		MaxAge:           300, // browser cache preflight 5 menit
+	})
+	r.Use(corsHandler)
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -112,6 +128,14 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/auth/login", s.handleLogin)
 		r.Post("/auth/refresh", s.handleRefresh)
 		r.Post("/auth/logout", s.handleLogout)
+
+		// Browsing dosen — publik karena:
+		// - Tidak ada data sensitif yang terbuka.
+		// - Portfolio butuh bisa dilihat recruiter sebelum login.
+		// - Kalender slot pun tidak membocorkan data booking mahasiswa.
+		r.Get("/lecturers", s.handleListLecturers)
+		r.Get("/lecturers/{id}", s.handleGetLecturer)
+		r.Get("/lecturers/{id}/slots", s.handleGetLecturerSlots)
 
 		// Butuh access token. Group membuat middleware hanya berlaku untuk
 		// rute di dalamnya — rute publik di atas tidak ikut terkena.
