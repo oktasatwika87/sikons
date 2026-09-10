@@ -13,38 +13,40 @@ export class NetworkError extends Error {
 /**
  * Fungsi fetch polos untuk API backend.
  *
- * BELUM ada logic retry/refresh token — itu ditambah di M5b
- * begitu AuthProvider ada.
- *
  * Yang dilakukan:
  * - Base URL dari env NEXT_PUBLIC_API_URL
  * - credentials: 'include' selalu (cookie refresh butuh ini)
- * - Content-Type: application/json otomatis kalau ada body
+ * - Content-Type: application/json otomatis kalau body adalah object
  * - Parse error response ke ApiError
  */
 export async function apiFetch<T>(
   path: string,
-  options?: RequestInit
+  options?: Omit<RequestInit, "body" | "headers"> & {
+    body?: BodyInit | Record<string, unknown>;
+    headers?: HeadersInit;
+  }
 ): Promise<T> {
   const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
 
-  // Bangun Headers dari options.headers (jika ada) atau kosong
   const headers = new Headers(options?.headers as HeadersInit);
 
-  let body: BodyInit | undefined = options?.body ?? undefined;
-
-  // Jika body adalah object biasa (bukan FormData/string/etc), serialisasi ke JSON
-  if (
-    body &&
-    typeof body === "object" &&
-    !(body instanceof FormData) &&
-    !(body instanceof Blob) &&
-    !(body instanceof ArrayBuffer) &&
-    !(body instanceof URLSearchParams) &&
-    !(body instanceof ReadableStream)
-  ) {
-    body = JSON.stringify(body);
-    headers.set("Content-Type", "application/json");
+  let body: BodyInit | undefined = undefined;
+  const rawBody = options?.body;
+  if (rawBody !== undefined) {
+    if (
+      typeof rawBody === "object" &&
+      rawBody !== null &&
+      !(rawBody instanceof FormData) &&
+      !(rawBody instanceof Blob) &&
+      !(rawBody instanceof ArrayBuffer) &&
+      !(rawBody instanceof URLSearchParams) &&
+      !(rawBody instanceof ReadableStream)
+    ) {
+      body = JSON.stringify(rawBody);
+      headers.set("Content-Type", "application/json");
+    } else {
+      body = rawBody as BodyInit;
+    }
   }
 
   let response: Response;
