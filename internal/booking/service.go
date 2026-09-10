@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -22,16 +23,18 @@ import (
 // perilaku penguncian baris Postgres — database palsu tidak membuktikan
 // apa pun tentang itu.
 type Service struct {
-	pool           *pgxpool.Pool
-	maxActive      int
-	minLeadMinutes int
+	pool            *pgxpool.Pool
+	maxActive       int
+	minLeadMinutes  int
+	cancelMinHours  int
 }
 
-func NewService(pool *pgxpool.Pool, minLeadMinutes int) *Service {
+func NewService(pool *pgxpool.Pool, minLeadMinutes, cancelMinHours int) *Service {
 	return &Service{
 		pool:           pool,
 		maxActive:      DefaultMaxActiveBookings,
 		minLeadMinutes: minLeadMinutes,
+		cancelMinHours: cancelMinHours,
 	}
 }
 
@@ -40,6 +43,12 @@ func NewService(pool *pgxpool.Pool, minLeadMinutes int) *Service {
 // error yang akurat tanpa hardcode angka.
 func (s *Service) MinLeadMinutes() int {
 	return s.minLeadMinutes
+}
+
+// CancelMinHours mengembalikan minimal jam sebelum slot yang dipakai service
+// saat memutuskan ErrCancelTooLate.
+func (s *Service) CancelMinHours() int {
+	return s.cancelMinHours
 }
 
 // Create memesan satu slot untuk satu mahasiswa.
@@ -546,7 +555,351 @@ func loadStudents(ctx context.Context, pool *pgxpool.Pool, ids []string) (map[st
 	return out, rows.Err()
 }
 
-// ComputeRequestHash menghitung SHA-256 hex dari field request yang sudah
+// Cancel membatalkan booking oleh mahasiswa.
+//
+// URUTAN KUNCI: slot dulu, baru booking. INI SANGAT PENTING.
+//
+// Alasan: slotgen.Reconcile (slotgen/service.go) mengunci SLOT dulu baru BOOKING
+// saat auto-cancel karena dosen menarik ketersediaan. Kalau Cancel mengunci booking
+// dulu baru slot, dan keduanya terjadi bersamaan pada slot yang SAMA, terjadi
+// deadlock: Cancel menahan booking sambil menunggu slot yang dipegang Reconcile,
+// Reconcile menahan slot sambil menunggu booking yang dipegang Cancel. Postgres akan
+// memilih salah satu sebagai korban, dan kalau yang jadi korban adalah koneksi dari
+// handler Cancel, client mendapat error 40P01 (deadlock detected) bukan response
+// yang sah. Dengan urutan slot->booking, kedua transaksi berjalan berurutan dan
+// tidak pernah saling tunggu.
+//
+// Complete dan NoShow TIDAK mengikuti urutan ini karena keduanya tidak menyentuh slot.
+func (s *Service) Cancel(ctx context.Context, bookingID, studentID, reason string) (*BookingView, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("memulai transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Langkah 1: baca slot_id dan student_id TANPA lock.
+	// slot_id tidak pernah berubah setelah booking dibuat — aman dibaca lepas.
+	var slotID string
+	var ownerID string
+	err = tx.QueryRow(ctx, `
+		SELECT slot_id::text, student_id::text
+		FROM bookings WHERE id = $1::uuid`,
+		bookingID,
+	).Scan(&slotID, &ownerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrBookingNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("membaca booking: %w", err)
+	}
+	// student_id != input -> seolah-olah booking tidak ada (404, bukan 403).
+	if ownerID != studentID {
+		return nil, ErrBookingNotFound
+	}
+
+	// Langkah 2: kunci baris slot.
+	// start_at dibaca di sini untuk dipakai di langkah 4 (cek H-3 jam).
+	var startAt time.Time
+	err = tx.QueryRow(ctx, `
+		SELECT start_at FROM slots WHERE id = $1::uuid FOR UPDATE`,
+		slotID,
+	).Scan(&startAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrBookingNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mengunci slot: %w", err)
+	}
+
+	// Langkah 3: kunci baris booking.
+	var status string
+	err = tx.QueryRow(ctx, `
+		SELECT status::text FROM bookings WHERE id = $1::uuid FOR UPDATE`,
+		bookingID,
+	).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrBookingNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mengunci booking: %w", err)
+	}
+
+	switch status {
+	case "cancelled":
+		return nil, ErrBookingAlreadyCancelled
+	case "completed", "no_show":
+		return nil, ErrBookingAlreadyFinalized
+	}
+
+	// Langkah 4: cek H-3 jam. now() Postgres melawan start_at yang sudah dikurang 3 jam.
+	// Kalau slot mulai 5 jam lagi, start_at - 3 jam = 2 jam lagi. now() < 2 jam lagi -> TRUE ->
+	// tidakTerlaluDekat = TRUE -> boleh cancel.
+	// Kalau slot mulai 2 jam lagi, start_at - 3 jam = -1 jam lalu. now() >= -1 jam lalu -> TRUE ->
+	// tidakTerlaluDekat = TRUE -> boleh cancel? Tidak! Harus FALSE.
+	//
+	// Spec: mahasiswa boleh cancel kalau sekarang >= start_at - 3 jam.
+	// Start dalam 5 jam: sekarang 0 >= 2 jam lagi? FALSE. Seharusnya FALSE.
+	// Start dalam 2 jam: sekarang 0 >= -1 jam lalu? TRUE. Seharusnya FALSE (terlalu dekat).
+	//
+	// Jadi check yang benar: sekarang harus SUDAH LEWAT start_at - 3 jam.
+	// start_at = sekarang + 5 jam -> start_at - 3 jam = sekarang + 2 jam. Sekarang BELUM sampai situ -> FALSE.
+	// start_at = sekarang + 2 jam -> start_at - 3 jam = sekarang - 1 jam. Sekarang SUDAH lewat -> TRUE.
+	// WAIT, ini terbalik! Spec mengatakan H-3 jam berarti:
+// kalau sekarang >= start_at - 3 jam, MAKA boleh cancel.
+// Start dalam 5 jam: 0 >= 2 jam dari sekarang? FALSE -> tidak boleh cancel?
+// Itu jelas salah. Spec harusnya: mahasiswa TIDAK BOLEH cancel kalau < 3 jam.
+// Jadi check yang benar: sekarang < start_at - 3 jam -> ErrCancelTooLate.
+// Atau equivalently: sekarang >= start_at - 3 jam -> boleh.
+	//
+	// Kalau slot mulai 5 jam dari sekarang:
+	// start_at - 3 jam = 2 jam dari sekarang.
+	// sekarang >= 2 jam dari sekarang? FALSE.
+	// Hasil FALSE -> !FALSE = TRUE -> ErrCancelTooLate.
+	// Itu terbalik!
+	//
+	// Saya pikir saya salah baca spec. Spec harusnya:
+// "pembatalan H-3 jam" = "tidak boleh cancel kalau < 3 jam sebelum jadwal"
+// = "boleh cancel kalau >= 3 jam sebelum jadwal"
+	//
+	// Check: sekarang < start_at - 3 jam -> ErrCancelTooLate.
+	// Start dalam 5 jam: sekarang < 2 jam dari sekarang? FALSE -> OK.
+	// Start dalam 2 jam: sekarang < -1 jam lalu? FALSE -> OK? Itu juga salah!
+	//
+	// Mari saya hitung ulang dengan contoh:
+	// Kalau H-3 jam dan slot mulai jam 10.00, mahasiswa boleh cancel sebelum jam 07.00.
+	// Kalau sekarang jam 08.00, 08.00 < 07.00? FALSE. Tapi harusnya ErrCancelTooLate karena
+	// hanya 2 jam sebelum jadwal, kurang dari 3 jam.
+	//
+	// check: sekarang >= start_at - 3 jam?
+	// 08.00 >= 07.00? TRUE -> boleh cancel? Itu SALAH!
+	//
+	// Jadi spec harusnya DIBALIK: mahasiswa BOLEH cancel kalau >= 3 jam SEBELUM jadwal.
+	// check: sekarang >= start_at - 3 jam?
+	// 08.00 >= 07.00? TRUE -> boleh? Itu SALAH karena baru 2 jam sebelumnya.
+	//
+	// Hmm, spec yang benar:
+// "mahasiswa boleh cancel H-3 jam" berarti: interval antara sekarang dan jadwal >= 3 jam.
+// Interval = start_at - now(). >= 3 jam = start_at >= now() + 3 jam.
+	//
+	// Check: start_at >= now() + 3 jam -> boleh cancel.
+	// Start dalam 5 jam: 5 jam >= 3 jam? TRUE -> boleh.
+	// Start dalam 2 jam: 2 jam >= 3 jam? FALSE -> ErrCancelTooLate.
+	//
+	// Atau dalam SQL:
+	// start_at >= now() + make_interval(hours => $2)
+	//
+	// Tapi spec spec meminta "pembatalan H-3 jam" = TIDAK boleh cancel kalau < 3 jam sebelumnya.
+	// Jadi check: start_at - now() < 3 jam -> ErrCancelTooLate.
+	//
+	// start_at - now() < make_interval(hours => $2)
+	// Atau: NOT (start_at - now() >= make_interval(hours => $2))
+	// Atau: start_at < now() + make_interval(hours => $2)
+	//
+	// Check di SQL:
+	// Langkah 4: cek H-3 jam. Mahasiswa tidak boleh cancel kalau < 3 jam sebelum jadwal.
+	// Check: start_at < now() + 3 jam -> terlalu dekat (tidak boleh cancel).
+	var terlaluDekat bool
+	err = tx.QueryRow(ctx, `
+		SELECT $1::timestamptz < (now() + make_interval(hours => $2))`,
+		startAt, s.cancelMinHours,
+	).Scan(&terlaluDekat)
+	if err != nil {
+		return nil, fmt.Errorf("memeriksa batas pembatalan: %w", err)
+	}
+	if terlaluDekat {
+		return nil, ErrCancelTooLate
+	}
+
+	// Langkah 5: batalkan booking.
+	// cancelled_by = studentID karena mahasiswa membatalkan booking-nya sendiri.
+	var cancelReason *string
+	if reason != "" {
+		cancelReason = &reason
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE bookings
+		SET status = 'cancelled',
+		    cancelled_at = now(),
+		    cancelled_by = $2::uuid,
+		    cancel_reason = $3
+		WHERE id = $1::uuid`,
+		bookingID, studentID, cancelReason,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("membatalkan booking: %w", err)
+	}
+
+	// Langkah 6: kembalikan slot ke 'open' kalau tidak ada booking aktif lain.
+	// Guard ini SAMA PERSIS dengan yang dipakai Reconcile untuk perilaku
+	// yang konsisten — booking selesai tidak dianggap occupies slot.
+	_, err = tx.Exec(ctx, `
+		UPDATE slots
+		SET status = 'open'
+		WHERE id = $1::uuid
+		  AND withdrawn_at IS NULL
+		  AND NOT EXISTS (
+		      SELECT 1 FROM bookings
+		      WHERE slot_id = $1::uuid AND status <> 'cancelled'
+		  )`,
+		slotID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("mengembalikan slot: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	// Load view untuk response.
+	view, err := s.loadBookingView(ctx, `WHERE b.id = $1::uuid`, bookingID)
+	if err != nil {
+		return nil, fmt.Errorf("membaca hasil: %w", err)
+	}
+	return view, nil
+}
+
+// Complete menandai booking sebagai selesai. Hanya dosen pemilik slot yang boleh.
+func (s *Service) Complete(ctx context.Context, bookingID, lecturerID, note string) (*BookingView, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("memulai transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Langkah 1: kunci HANYA baris booking dengan FOR UPDATE OF b.
+	// join ke slots diperlukan untuk mengambil lecturer_id dan start_at yang
+	// keduanya immutable, jadi aman dibaca tanpa kunci khusus.
+	// FOR UPDATE OF b membatasi lock ke tabel bookings saja — slot tidak dikunci.
+	var status string
+	var startAt time.Time
+	var slotLecturerID string
+	err = tx.QueryRow(ctx, `
+		SELECT b.status::text, s.start_at, s.lecturer_id::text
+		FROM bookings b
+		JOIN slots s ON s.id = b.slot_id
+		WHERE b.id = $1::uuid
+		FOR UPDATE OF b`,
+		bookingID,
+	).Scan(&status, &startAt, &slotLecturerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrBookingNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mengunci booking: %w", err)
+	}
+	// Langkah 2: verifikasi dosen.
+	if slotLecturerID != lecturerID {
+		return nil, ErrBookingNotFound
+	}
+
+	// Langkah 3: cek status.
+	if status != "confirmed" {
+		return nil, ErrBookingNotConfirmed
+	}
+
+	// Langkah 4: cek sesi sudah dimulai.
+	var sudahDimulai bool
+	err = tx.QueryRow(ctx, `SELECT now() >= $1`, startAt).Scan(&sudahDimulai)
+	if err != nil {
+		return nil, fmt.Errorf("memeriksa waktu sesi: %w", err)
+	}
+	if !sudahDimulai {
+		return nil, ErrSessionNotStarted
+	}
+
+	// Langkah 5: simpan status + note.
+	var lecturerNote *string
+	if note != "" {
+		lecturerNote = &note
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE bookings
+		SET status = 'completed', lecturer_note = $2
+		WHERE id = $1::uuid`,
+		bookingID, lecturerNote,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("menyelesaikan booking: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	view, err := s.loadBookingView(ctx, `WHERE b.id = $1::uuid`, bookingID)
+	if err != nil {
+		return nil, fmt.Errorf("membaca hasil: %w", err)
+	}
+	return view, nil
+}
+
+// NoShow menandai booking sebagai tidak hadir. Hanya dosen pemilik slot.
+func (s *Service) NoShow(ctx context.Context, bookingID, lecturerID string) (*BookingView, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("memulai transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Langkah 1: kunci HANYA baris booking.
+	var status string
+	var startAt time.Time
+	var slotLecturerID string
+	err = tx.QueryRow(ctx, `
+		SELECT b.status::text, s.start_at, s.lecturer_id::text
+		FROM bookings b
+		JOIN slots s ON s.id = b.slot_id
+		WHERE b.id = $1::uuid
+		FOR UPDATE OF b`,
+		bookingID,
+	).Scan(&status, &startAt, &slotLecturerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrBookingNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mengunci booking: %w", err)
+	}
+
+	// Langkah 2: verifikasi dosen.
+	if slotLecturerID != lecturerID {
+		return nil, ErrBookingNotFound
+	}
+
+	// Langkah 3: cek status.
+	if status != "confirmed" {
+		return nil, ErrBookingNotConfirmed
+	}
+
+	// Langkah 4: cek sesi sudah dimulai.
+	var sudahDimulai bool
+	err = tx.QueryRow(ctx, `SELECT now() >= $1`, startAt).Scan(&sudahDimulai)
+	if err != nil {
+		return nil, fmt.Errorf("memeriksa waktu sesi: %w", err)
+	}
+	if !sudahDimulai {
+		return nil, ErrSessionNotStarted
+	}
+
+	// Langkah 5: simpan status.
+	_, err = tx.Exec(ctx, `
+		UPDATE bookings SET status = 'no_show' WHERE id = $1::uuid`,
+		bookingID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("menandai no-show: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	view, err := s.loadBookingView(ctx, `WHERE b.id = $1::uuid`, bookingID)
+	if err != nil {
+		return nil, fmt.Errorf("membaca hasil: %w", err)
+	}
+	return view, nil
+}
 // diurutkan secara deterministik: slot_id + newline + topic + newline + description.
 func ComputeRequestHash(slotID, topic, description string) string {
 	data := slotID + "\n" + topic + "\n" + description

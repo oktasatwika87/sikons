@@ -42,6 +42,14 @@ type slotRef struct {
 	EndAt   string `json:"end_at"`
 }
 
+type cancelBookingRequest struct {
+	Reason string `json:"reason"`
+}
+
+type completeBookingRequest struct {
+	LecturerNote string `json:"lecturer_note"`
+}
+
 type personRef struct {
 	ID             string `json:"id"`
 	FullName       string `json:"full_name"`
@@ -323,4 +331,148 @@ func isValidUUID(s string) bool {
 
 func isHexChar(c byte) bool {
 	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+func (s *Server) handleCancelBooking(w http.ResponseWriter, r *http.Request) {
+	id, ok := auth.IdentityFrom(r.Context())
+	if !ok {
+		httpx.Internal(w)
+		return
+	}
+
+	bookingID := chi.URLParam(r, "id")
+	if bookingID == "" {
+		httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
+			"ID booking wajib diisi", nil)
+		return
+	}
+
+	// Body opsional: { "reason": "..." }
+	var req cancelBookingRequest
+	if r.ContentLength > 0 {
+		if err := httpx.DecodeJSON(w, r, &req); err != nil {
+			httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
+				"Body request tidak valid: "+err.Error(), nil)
+			return
+		}
+		// Validasi panjang reason.
+		if utf8.RuneCountInString(req.Reason) > 500 {
+			httpx.Error(w, http.StatusUnprocessableEntity, httpx.CodeValidation,
+				"reason maksimal 500 karakter", nil)
+			return
+		}
+	}
+
+	view, err := s.booking.Cancel(r.Context(), bookingID, id.UserID, req.Reason)
+	if err != nil {
+		switch {
+		case errors.Is(err, booking.ErrBookingNotFound):
+			httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+				"Booking tidak ditemukan", nil)
+		case errors.Is(err, booking.ErrBookingAlreadyCancelled):
+			httpx.Error(w, http.StatusConflict, "BOOKING_ALREADY_CANCELLED",
+				"Booking sudah dibatalkan", nil)
+		case errors.Is(err, booking.ErrBookingAlreadyFinalized):
+			httpx.Error(w, http.StatusConflict, "BOOKING_ALREADY_FINALIZED",
+				"Booking sudah diselesaikan", nil)
+		case errors.Is(err, booking.ErrCancelTooLate):
+			httpx.Error(w, http.StatusUnprocessableEntity, "CANCEL_TOO_LATE",
+				fmt.Sprintf("Pembatalan wajib minimal %d jam sebelum jadwal",
+					s.booking.CancelMinHours()), nil)
+		default:
+			s.log.Error("membatalkan booking", "err", err)
+			httpx.Internal(w)
+		}
+		return
+	}
+
+	httpx.JSON(w, http.StatusOK, viewToResponse(view, id.Role))
+}
+
+func (s *Server) handleCompleteBooking(w http.ResponseWriter, r *http.Request) {
+	id, ok := auth.IdentityFrom(r.Context())
+	if !ok {
+		httpx.Internal(w)
+		return
+	}
+
+	bookingID := chi.URLParam(r, "id")
+	if bookingID == "" {
+		httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
+			"ID booking wajib diisi", nil)
+		return
+	}
+
+	// Body opsional: { "lecturer_note": "..." }
+	var req completeBookingRequest
+	if r.ContentLength > 0 {
+		if err := httpx.DecodeJSON(w, r, &req); err != nil {
+			httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
+				"Body request tidak valid: "+err.Error(), nil)
+			return
+		}
+		// Validasi panjang note.
+		if utf8.RuneCountInString(req.LecturerNote) > 2000 {
+			httpx.Error(w, http.StatusUnprocessableEntity, httpx.CodeValidation,
+				"lecturer_note maksimal 2000 karakter", nil)
+			return
+		}
+	}
+
+	view, err := s.booking.Complete(r.Context(), bookingID, id.UserID, req.LecturerNote)
+	if err != nil {
+		switch {
+		case errors.Is(err, booking.ErrBookingNotFound):
+			httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+				"Booking tidak ditemukan", nil)
+		case errors.Is(err, booking.ErrBookingNotConfirmed):
+			httpx.Error(w, http.StatusConflict, "BOOKING_NOT_CONFIRMED",
+				"Booking belum dikonfirmasi", nil)
+		case errors.Is(err, booking.ErrSessionNotStarted):
+			httpx.Error(w, http.StatusUnprocessableEntity, "SESSION_NOT_STARTED",
+				"Sesi belum dimulai", nil)
+		default:
+			s.log.Error("menyelesaikan booking", "err", err)
+			httpx.Internal(w)
+		}
+		return
+	}
+
+	httpx.JSON(w, http.StatusOK, viewToResponse(view, id.Role))
+}
+
+func (s *Server) handleNoShowBooking(w http.ResponseWriter, r *http.Request) {
+	id, ok := auth.IdentityFrom(r.Context())
+	if !ok {
+		httpx.Internal(w)
+		return
+	}
+
+	bookingID := chi.URLParam(r, "id")
+	if bookingID == "" {
+		httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
+			"ID booking wajib diisi", nil)
+		return
+	}
+
+	view, err := s.booking.NoShow(r.Context(), bookingID, id.UserID)
+	if err != nil {
+		switch {
+		case errors.Is(err, booking.ErrBookingNotFound):
+			httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+				"Booking tidak ditemukan", nil)
+		case errors.Is(err, booking.ErrBookingNotConfirmed):
+			httpx.Error(w, http.StatusConflict, "BOOKING_NOT_CONFIRMED",
+				"Booking belum dikonfirmasi", nil)
+		case errors.Is(err, booking.ErrSessionNotStarted):
+			httpx.Error(w, http.StatusUnprocessableEntity, "SESSION_NOT_STARTED",
+				"Sesi belum dimulai", nil)
+		default:
+			s.log.Error("menandai no-show", "err", err)
+			httpx.Internal(w)
+		}
+		return
+	}
+
+	httpx.JSON(w, http.StatusOK, viewToResponse(view, id.Role))
 }

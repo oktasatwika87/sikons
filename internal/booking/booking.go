@@ -22,14 +22,19 @@ const DefaultMaxActiveBookings = 3
 // 409 dan ErrSlotNotFound ke 404. Kalau pembedanya adalah string pesan, maka
 // memperbaiki typo di pesan error diam-diam mengubah status code API.
 var (
-	ErrSlotNotFound      = errors.New("slot tidak ditemukan")
-	ErrSlotAlreadyBooked = errors.New("slot sudah dipesan")
-	ErrSlotWithdrawn     = errors.New("slot sudah tidak tersedia")
-	ErrStudentNotFound   = errors.New("mahasiswa tidak ditemukan atau tidak aktif")
-	ErrLimitReached      = errors.New("batas booking aktif tercapai")
-	ErrSlotTooSoon       = errors.New("jarak tempuh booking terlalu pendek")
-	ErrIdempotencyReused = errors.New("idempotency key dipakai ulang dengan isi berbeda")
-	ErrBookingNotFound   = errors.New("booking tidak ditemukan")
+	ErrSlotNotFound            = errors.New("slot tidak ditemukan")
+	ErrSlotAlreadyBooked      = errors.New("slot sudah dipesan")
+	ErrSlotWithdrawn          = errors.New("slot sudah tidak tersedia")
+	ErrStudentNotFound        = errors.New("mahasiswa tidak ditemukan atau tidak aktif")
+	ErrLimitReached           = errors.New("batas booking aktif tercapai")
+	ErrSlotTooSoon            = errors.New("jarak tempuh booking terlalu pendek")
+	ErrIdempotencyReused      = errors.New("idempotency key dipakai ulang dengan isi berbeda")
+	ErrBookingNotFound        = errors.New("booking tidak ditemukan")
+	ErrBookingAlreadyCancelled = errors.New("booking sudah dibatalkan")
+	ErrBookingAlreadyFinalized = errors.New("booking sudah diselesaikan")
+	ErrCancelTooLate          = errors.New("pembatalan terlalu dekat dengan jadwal")
+	ErrBookingNotConfirmed     = errors.New("booking belum dikonfirmasi")
+	ErrSessionNotStarted      = errors.New("sesi belum dimulai")
 )
 
 type CreateInput struct {
