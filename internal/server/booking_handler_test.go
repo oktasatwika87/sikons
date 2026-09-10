@@ -43,7 +43,7 @@ func buatServerUji(t *testing.T) *bookingTestHelper {
 		Auth:    auth.NewService(poolUji, tokens, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		Tokens:  tokens,
 		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Booking: booking.NewService(poolUji, cfg.BookingMinLeadMin, 3),
+		Booking: booking.NewService(poolUji, cfg.BookingMinLeadMin, 3, cfg.ReminderLeadHours),
 	})
 
 	return &bookingTestHelper{
@@ -159,7 +159,7 @@ func (h *bookingTestHelper) buat3BookingAktif(mhsID, dosenID string) {
 	h.t.Helper()
 	for i := 0; i < 3; i++ {
 		slot := h.buatSlot(dosenID, time.Duration(24+i)*time.Hour)
-		_, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+		_, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 			SlotID: slot, StudentID: mhsID, Topic: "Bimbingan",
 		})
 		if err != nil {
@@ -720,10 +720,10 @@ func TestListBookings_MahasiswaHanyaLihatMiliknya(t *testing.T) {
 	slot1 := h.buatSlot(dosen, 24*time.Hour)
 	slot2 := h.buatSlot(dosen, 48*time.Hour)
 
-	_, _ = booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot1, StudentID: mhs1ID, Topic: "Milik mhs1",
 	})
-	_, _ = booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot2, StudentID: mhs2ID, Topic: "Milik mhs2",
 	})
 
@@ -768,10 +768,10 @@ func TestListBookings_DosenLihatDiSlotnya(t *testing.T) {
 	slot1 := h.buatSlot(dosen, 24*time.Hour)
 	slot2 := h.buatSlot(dosen, 48*time.Hour)
 
-	_, _ = booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot1, StudentID: mhs1ID, Topic: "Bimbingan 1",
 	})
-	_, _ = booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot2, StudentID: mhs2ID, Topic: "Bimbingan 2",
 	})
 
@@ -799,7 +799,7 @@ func TestGetBooking_MilikOrangLain(t *testing.T) {
 	_, tokenMhs2 := h.buatMahasiswa()
 	slot := h.buatSlot(dosen, 24*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhs1ID, Topic: "Bimbingan",
 	})
 	if err != nil {
@@ -822,7 +822,7 @@ func TestGetBooking_Success(t *testing.T) {
 	mhsID, tokenMhs := h.buatMahasiswa()
 	slot := h.buatSlot(dosen, 24*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhsID, Topic: "Bimbingan skripsi",
 	})
 	if err != nil {
@@ -855,7 +855,7 @@ func TestGetBooking_AdminDitolak(t *testing.T) {
 	_, tokenAdmin := h.buatAdmin()
 	slot := h.buatSlot(dosen, 24*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhsID, Topic: "Bimbingan",
 	})
 	if err != nil {
@@ -881,7 +881,7 @@ func TestCancelBooking_HappyPath(t *testing.T) {
 	// Slot 5 jam dari sekarang — jauh dari H-3.
 	slot := h.buatSlot(dosen, 5*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhsID, Topic: "Test cancel",
 	})
 	if err != nil {
@@ -915,7 +915,7 @@ func TestCancelBooking_OrangLain(t *testing.T) {
 	_, tokenMhs2 := h.buatMahasiswa()
 	slot := h.buatSlot(dosen, 5*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhs1ID, Topic: "Milik mhs1",
 	})
 	if err != nil {
@@ -940,7 +940,7 @@ func TestCancelBooking_TerlaluDekat(t *testing.T) {
 	// Slot 2 jam dari sekarang — kurang dari H-3.
 	slot := h.buatSlot(dosen, 2*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhsID, Topic: "Terlalu dekat",
 	})
 	if err != nil {
@@ -968,7 +968,7 @@ func TestCancelBooking_DosenDitolak(t *testing.T) {
 	mhsID, _ := h.buatMahasiswa()
 	slot := h.buatSlot(dosenID, 5*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhsID, Topic: "Test",
 	})
 	if err != nil {
@@ -1060,7 +1060,7 @@ func TestCompleteBooking_SebelumStart(t *testing.T) {
 	// Slot di masa depan — belum dimulai.
 	slot := h.buatSlot(dosenID, 5*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhsID, Topic: "Test",
 	})
 	if err != nil {

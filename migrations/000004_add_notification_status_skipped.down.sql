@@ -1,0 +1,18 @@
+-- =============================================================================
+-- M4b — reminder email H-1 (down)
+--
+-- MENAMBAH nilai enum di Postgres TIDAK reversible secara langsung.
+--
+-- Postgres tidak menyediakan sintaks untuk menghapus satu nilai dari enum.
+-- Satu-satunya cara adalah recreate entire type — operasi yang berat dan
+-- berpotensi memblokir tabel besar.
+--
+-- Untuk fitur reminder yang nilai 'skipped'-nya hanya penanda administratif
+-- (bukan constraint teknis), trade-off ini diterima. Kalau suatu saat
+-- benar-benar butuh rollback, opsional bisa:
+--   1. Tambah kolom status_lama di tabel
+--   2. Migrasikan data secara bertahap
+--   3. Drop kolom status lama setelah semua instance di-upgrade
+--
+-- Alternatif lain: pakai text biasa untuk kolom status, bukan enum.
+-- =============================================================================
