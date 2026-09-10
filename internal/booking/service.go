@@ -23,18 +23,20 @@ import (
 // perilaku penguncian baris Postgres — database palsu tidak membuktikan
 // apa pun tentang itu.
 type Service struct {
-	pool            *pgxpool.Pool
-	maxActive       int
-	minLeadMinutes  int
-	cancelMinHours  int
+	pool             *pgxpool.Pool
+	maxActive        int
+	minLeadMinutes   int
+	cancelMinHours   int
+	reminderLeadHours int
 }
 
-func NewService(pool *pgxpool.Pool, minLeadMinutes, cancelMinHours int) *Service {
+func NewService(pool *pgxpool.Pool, minLeadMinutes, cancelMinHours, reminderLeadHours int) *Service {
 	return &Service{
-		pool:           pool,
-		maxActive:      DefaultMaxActiveBookings,
-		minLeadMinutes: minLeadMinutes,
-		cancelMinHours: cancelMinHours,
+		pool:             pool,
+		maxActive:        DefaultMaxActiveBookings,
+		minLeadMinutes:   minLeadMinutes,
+		cancelMinHours:   cancelMinHours,
+		reminderLeadHours: reminderLeadHours,
 	}
 }
 
@@ -49,6 +51,12 @@ func (s *Service) MinLeadMinutes() int {
 // saat memutuskan ErrCancelTooLate.
 func (s *Service) CancelMinHours() int {
 	return s.cancelMinHours
+}
+
+// ReminderLeadHours mengembalikan jam sebelum slot dimulai untuk pengiriman
+// reminder email.
+func (s *Service) ReminderLeadHours() int {
+	return s.reminderLeadHours
 }
 
 // Create memesan satu slot untuk satu mahasiswa.
@@ -198,13 +206,15 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 	var status string
 	var withdrawn bool
 	var tooSoon bool
+	var slotStartAt time.Time
 	err = tx.QueryRow(ctx, `
 		SELECT status::text,
 		       withdrawn_at IS NOT NULL,
-		       start_at <= now() + make_interval(mins => $2)
+		       start_at <= now() + make_interval(mins => $2),
+		       start_at
 		FROM slots WHERE id = $1::uuid FOR UPDATE`,
 		in.SlotID, s.minLeadMinutes,
-	).Scan(&status, &withdrawn, &tooSoon)
+	).Scan(&status, &withdrawn, &tooSoon, &slotStartAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSlotNotFound
 	}
@@ -289,6 +299,34 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 	if ct.RowsAffected() != 1 {
 		return nil, fmt.Errorf("slot %s gagal ditandai terpakai: %d baris terdampak",
 			in.SlotID, ct.RowsAffected())
+	}
+
+	// LANGKAH 5.5 — jadwalkan reminder email.
+	//
+	// Notifikasi disimpan DALAM TRANSAKSI YANG SAMA dengan booking. Ini penting:
+	// tidak ada langkah kedua yang bisa gagal terpisah dari langkah pertama.
+	// Kalau booking berhasil, reminder PASTI ada. Kalau proses crash antara commit
+	// dan worker membaca, tidak ada reminder — tapi booking-nya tetap ada, dan
+	// student bisa hubungi admin untuk tahu apa yang terjadi.
+	//
+	// scheduled_at = slot_start - reminderLeadHours. Edge case: kalau lead time
+	// terlalu pendek (misal slot dalam 30 menit, lead 1 jam), scheduled_at bisa
+	// sudah lewat saat baris ini di-insert. Worker akan mengambilnya di polling
+	// tick berikutnya dan mengirim "reminder" segera — bukan bug, hanya kasus
+	// degenerate yang harus ditangani worker.
+	//
+	// Payload sengaja kosong. Worker JOIN ke bookings/slots/users saat mengirim
+	// supaya dapat status booking TERKINI untuk pengecekan skipped (booking sudah
+	// tidak confirmed), bukan payload yang bisa basi.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO notifications (user_id, booking_id, type, payload, scheduled_at)
+		VALUES ($1::uuid, $2::uuid, 'booking_reminder', '{}'::jsonb,
+		        $3::timestamptz - make_interval(hours => $4))
+		ON CONFLICT (booking_id, type) WHERE booking_id IS NOT NULL DO NOTHING`,
+		in.StudentID, b.ID, slotStartAt, s.reminderLeadHours,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("menyimpan notifikasi reminder: %w", err)
 	}
 
 	// LANGKAH 6 — tulis response_body ke idempotency_keys.

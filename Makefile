@@ -8,7 +8,7 @@
 -include .env
 export
 
-.PHONY: help up down reset logs psql migrate-up migrate-down migrate-version migrate-new test-db run seed generate-slots test test-unit test-concurrency test-cover tidy fmt vet
+.PHONY: help up down reset logs psql migrate-up migrate-down migrate-version migrate-new test-db run seed generate-slots test test-unit test-concurrency test-cover tidy fmt vet worker
 
 help: ## Tampilkan daftar perintah
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -50,6 +50,9 @@ migrate-new: ## Buat file migrasi baru: make migrate-new name=tambah_sesuatu
 
 run: ## Jalankan API server
 	go run ./cmd/api
+
+worker: ## Jalankan worker reminder email
+	go run ./cmd/worker
 
 seed: ## Isi database dengan data demo (akun admin, dosen, mahasiswa)
 	go run ./cmd/seed

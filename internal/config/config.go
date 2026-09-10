@@ -25,6 +25,13 @@ type Config struct {
 	SlotHorizonDays      int             // berapa hari ke depan slot harus di-generate
 	BookingMinLeadMin    int             // minimal menit sebelum slot boleh dipesan
 	BookingCancelMinHrs  int             // minimal jam sebelum slot boleh dibatalkan mahasiswa
+	// Reminder: tidak wajib di config.Load() karena cmd/api tidak mengirim email.
+	// cmd/worker memvalidasi sendiri bahwa ResendAPIKey tidak kosong.
+	ResendAPIKey         string
+	EmailFrom            string          // default "SIKONS <onboarding@resend.dev>"
+	ReminderLeadHours    int             // berapa jam sebelum slot reminder dikirim
+	ReminderPollInterval time.Duration   // interval polling worker
+	ReminderMaxAttempts  int            // maks percobaan kirim email
 }
 
 // Load membaca env dan mengembalikan error kalau ada yang wajib tapi kosong.
@@ -89,6 +96,44 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("BOOKING_CANCEL_MIN_HOURS %q harus angka non-negatif: %w", h, err)
 		}
 		cfg.BookingCancelMinHrs = n
+	}
+
+	// Reminder: tidak masuk validasi wajib karena cmd/api tidak mengirim email.
+	cfg.ResendAPIKey = os.Getenv("RESEND_API_KEY")
+	cfg.EmailFrom = env("EMAIL_FROM", "SIKONS <onboarding@resend.dev>")
+	// Email sandbox Resend tidak perlu verifikasi domain sendiri — cocok untuk demo.
+	// Production harus verifikasi domain di dashboard.resend.com.
+
+	// ReminderLeadHours: berapa jam sebelum slot dimulai reminder dikirim.
+	cfg.ReminderLeadHours = 1
+	if h := os.Getenv("REMINDER_LEAD_HOURS"); h != "" {
+		var n int
+		_, err := fmt.Sscanf(h, "%d", &n)
+		if err != nil || n < 0 {
+			return Config{}, fmt.Errorf("REMINDER_LEAD_HOURS %q harus angka non-negatif: %w", h, err)
+		}
+		cfg.ReminderLeadHours = n
+	}
+
+	// ReminderPollInterval: seberapa sering worker mengecek notifikasi yang due.
+	cfg.ReminderPollInterval = time.Minute
+	if p := os.Getenv("REMINDER_POLL_INTERVAL"); p != "" {
+		d, err := time.ParseDuration(p)
+		if err != nil {
+			return Config{}, fmt.Errorf("REMINDER_POLL_INTERVAL %q tidak valid: %w", p, err)
+		}
+		cfg.ReminderPollInterval = d
+	}
+
+	// ReminderMaxAttempts: maks percobaan kirim email sebelum ditandai failed.
+	cfg.ReminderMaxAttempts = 5
+	if m := os.Getenv("REMINDER_MAX_ATTEMPTS"); m != "" {
+		var n int
+		_, err := fmt.Sscanf(m, "%d", &n)
+		if err != nil || n <= 0 {
+			return Config{}, fmt.Errorf("REMINDER_MAX_ATTEMPTS %q harus angka positif: %w", m, err)
+		}
+		cfg.ReminderMaxAttempts = n
 	}
 
 	// Dikumpulkan dulu semuanya, baru dilaporkan sekaligus. Melaporkan satu

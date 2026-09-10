@@ -1,0 +1,27 @@
+-- =============================================================================
+-- M4b — reminder email H-1
+--
+-- Menambah nilai 'skipped' ke enum notification_status.
+--
+-- Status baru ini untuk kasus di mana reminder Batal dikirim karena
+-- booking-nya sudah tidak confirmed lagi saat waktunya tiba (misalnya dosen
+-- mengubah jadwal dan Reconcile auto-cancel booking itu). Ini berbeda dari:
+--   - sent  : email berhasil terkirim
+--   - failed: gagal karena error teknis (API down, timeout, dll)
+--
+-- ALASAN TIDAK MEMBUAT REVERSIBLE DOWN MIGRATION:
+--
+-- Postgres tidak mengizinkan DROP VALUE dari enum secara langsung. Untuk
+-- menghapus satu nilai, harus:
+--   1. ALTER TYPE ... RENAME TO ..._old
+--   2. CREATE TYPE ... AS ENUM (...nilai baru tanpa 'skipped'...)
+--   3. ALTER TABLE ... ALTER COLUMN ... TYPE ... USING ...
+--   4. DROP TYPE ..._old
+--
+-- Ini adalah operasi berbahaya yang membutuhkan lock eksklusif di tabel
+-- yang pakai enum ini. Untuk fitur reminder yang risikonya rendah jika
+-- tidak reversible (skipped hanya berarti "tidak dikirim"), trade-off
+-- ini diterima demi kesederhanaan migrasi.
+-- =============================================================================
+
+ALTER TYPE notification_status ADD VALUE 'skipped';

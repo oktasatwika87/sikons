@@ -193,7 +193,7 @@ func TestCreate_SuksesSaatSlotMasihOpen(t *testing.T) {
 	mhs := buatMahasiswa(t, 1)
 	slot := buatSlot(t, dosen, 72*time.Hour)
 
-	result, err := NewService(poolUji, 60, 3).Create(context.Background(), CreateInput{
+	result, err := NewService(poolUji, 60, 3, 1).Create(context.Background(), CreateInput{
 		SlotID: slot, StudentID: mhs[0], Topic: "Bimbingan skripsi",
 	})
 	if err != nil {
@@ -220,7 +220,7 @@ func TestCreate_SuksesSaatSlotMasihOpen(t *testing.T) {
 func TestCreate_SlotTidakAda(t *testing.T) {
 	mhs := buatMahasiswa(t, 1)
 
-	_, err := NewService(poolUji, 60, 3).Create(context.Background(), CreateInput{
+	_, err := NewService(poolUji, 60, 3, 1).Create(context.Background(), CreateInput{
 		SlotID:    "00000000-0000-0000-0000-000000000000",
 		StudentID: mhs[0], Topic: "x",
 	})
@@ -229,11 +229,60 @@ func TestCreate_SlotTidakAda(t *testing.T) {
 	}
 }
 
+func TestCreate_MembuatReminderNotification(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	// Slot 2 jam dari sekarang — jauh dari minLeadMinutes (60 menit)
+	// supaya test fokus ke notification, bukan valdasi lead time.
+	slot := buatSlot(t, dosen, 2*time.Hour)
+
+	result, err := NewService(poolUji, 60, 3, 1).Create(context.Background(), CreateInput{
+		SlotID: slot, StudentID: mhs[0], Topic: "Bimbingan",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	// Verifikasi baris notification terbuat.
+	var notifCount int
+	err = poolUji.QueryRow(context.Background(), `
+		SELECT count(*) FROM notifications
+		WHERE booking_id = $1::uuid AND type = 'booking_reminder'`,
+		result.Booking.ID).Scan(&notifCount)
+	if err != nil {
+		t.Fatalf("query notification: %v", err)
+	}
+	if notifCount != 1 {
+		t.Fatalf("notification count = %d, want 1", notifCount)
+	}
+
+	// Verifikasi scheduled_at = slot_start - reminderLeadHours (dalam toleransi 10 detik).
+	var scheduledAt time.Time
+	var slotStartAt time.Time
+	err = poolUji.QueryRow(context.Background(), `
+		SELECT n.scheduled_at, s.start_at
+		FROM notifications n
+		JOIN bookings b ON b.id = n.booking_id
+		JOIN slots s ON s.id = b.slot_id
+		WHERE n.booking_id = $1::uuid AND n.type = 'booking_reminder'`,
+		result.Booking.ID).Scan(&scheduledAt, &slotStartAt)
+	if err != nil {
+		t.Fatalf("query scheduled_at: %v", err)
+	}
+
+	// scheduled_at seharusnya = slot_start - 1 jam.
+	expectedScheduled := slotStartAt.Add(-time.Hour)
+	diff := scheduledAt.Sub(expectedScheduled)
+	if diff < -10*time.Second || diff > 10*time.Second {
+		t.Errorf("scheduled_at = %v, want ~%v (diff=%v)", scheduledAt, expectedScheduled, diff)
+	}
+}
+
 func TestCreate_SlotSudahDipesanOrangLain(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 2)
 	slot := buatSlot(t, dosen, 72*time.Hour)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	_, err := svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "duluan"})
@@ -255,7 +304,7 @@ func TestCreate_SlotSudahDipesanOrangLain(t *testing.T) {
 func TestCreate_BatasTigaBookingAktif(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	for i := 0; i < DefaultMaxActiveBookings; i++ {
 		slot := buatSlot(t, dosen, time.Duration(24+i)*time.Hour)
@@ -278,7 +327,7 @@ func TestCreate_BatasTigaBookingAktif(t *testing.T) {
 func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	// Tiga slot di masa lalu, diisi langsung lewat SQL karena Create wajar saja
 	// menolak slot yang sudah lewat nanti di M3.
@@ -304,7 +353,7 @@ func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
 func TestCreate_SlotDitarik(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	slot := buatSlot(t, dosen, 72*time.Hour)
 
@@ -341,7 +390,7 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, jumlah)
 	slot := buatSlot(t, dosen, 72*time.Hour)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -431,7 +480,7 @@ func TestCreate_SatuMahasiswaMenembakSepuluhSlotSekaligus(t *testing.T) {
 
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	slots := make([]string, jumlah)
 	for i := range slots {
@@ -500,7 +549,7 @@ func TestCreate_IdempotencyKeyKlaimBerhasil(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
 	slot := buatSlot(t, dosen, 72*time.Hour)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	key := "test-key-" + unik()
 	hash := ComputeRequestHash(slot, "Topik", "")
@@ -577,7 +626,7 @@ func bytesContains(haystack, needle []byte) bool {
 func TestCancel_Success(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	// Slot mulai 5 jam dari sekarang — lebih dari H-3.
 	slot := buatSlot(t, dosen, 5*time.Hour)
@@ -603,7 +652,7 @@ func TestCancel_Success(t *testing.T) {
 func TestCancel_TerlaluDekatH3Jam(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	// Slot mulai 2 jam dari sekarang — kurang dari H-3.
 	slot := buatSlot(t, dosen, 2*time.Hour)
@@ -630,7 +679,7 @@ func TestCancel_TerlaluDekatH3Jam(t *testing.T) {
 func TestCancel_SudahCancelled(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	slot := buatSlot(t, dosen, 5*time.Hour)
 	b, err := svc.Create(context.Background(), CreateInput{
@@ -654,7 +703,7 @@ func TestCancel_SudahCancelled(t *testing.T) {
 func TestCancel_Completed(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	// Buat slot yang sudah dimulai 30 menit lalu.
 	slot := buatSlotDimulai(t, dosen, 30*time.Minute)
@@ -702,7 +751,7 @@ func buatBooking(t *testing.T, slotID, studentID, status string) string {
 func TestComplete_SebelumStartAt(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	// Slot di masa depan (belum dimulai) tapi booking sudah ada.
 	slot := buatSlot(t, dosen, 5*time.Hour)
@@ -717,7 +766,7 @@ func TestComplete_SebelumStartAt(t *testing.T) {
 func TestComplete_Success(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	// Slot di masa lalu (sudah dimulai).
 	slot := buatSlotDimulai(t, dosen, 15*time.Minute)
@@ -743,7 +792,7 @@ func TestComplete_Success(t *testing.T) {
 func TestComplete_SudahCompleted(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	slot := buatSlotDimulai(t, dosen, 30*time.Minute)
 	bookingID := buatBooking(t, slot, mhs[0], "confirmed")
@@ -764,7 +813,7 @@ func TestComplete_SudahCompleted(t *testing.T) {
 func TestNoShow_SebelumStartAt(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	slot := buatSlot(t, dosen, 5*time.Hour)
 	bookingID := buatBooking(t, slot, mhs[0], "confirmed")
@@ -778,7 +827,7 @@ func TestNoShow_SebelumStartAt(t *testing.T) {
 func TestNoShow_Success(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	slot := buatSlotDimulai(t, dosen, 20*time.Minute)
 	bookingID := buatBooking(t, slot, mhs[0], "confirmed")
@@ -817,7 +866,7 @@ func TestNoShow_Success(t *testing.T) {
 func TestCancel_BarengReconcileTidakDeadlock(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	// Jalankan 10 kali dengan slot dan booking berbeda setiap iterasi.
 	for i := 0; i < 10; i++ {
@@ -898,7 +947,7 @@ func isDeadlockError(err error) bool {
 func TestCancel_BukanPemilik(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 2)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	slot := buatSlot(t, dosen, 5*time.Hour)
 	b, err := svc.Create(context.Background(), CreateInput{
@@ -920,7 +969,7 @@ func TestNoShow_DosenLain(t *testing.T) {
 	dosen := buatDosen(t)
 	dosen2 := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60, 3)
+	svc := NewService(poolUji, 60, 3, 1)
 
 	slot := buatSlotDimulai(t, dosen, 15*time.Minute)
 	bookingID := buatBooking(t, slot, mhs[0], "confirmed")

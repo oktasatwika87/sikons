@@ -74,7 +74,7 @@ func run() error {
 			Tokens:       tokens,
 			Log:          log,
 			Availability: availability.NewService(pool),
-			Booking:      booking.NewService(pool, cfg.BookingMinLeadMin, cfg.BookingCancelMinHrs),
+			Booking:      booking.NewService(pool, cfg.BookingMinLeadMin, cfg.BookingCancelMinHrs, cfg.ReminderLeadHours),
 			Slotgen:      slotgen.New(pool, cfg.CampusTZ, cfg.SlotHorizonDays),
 		}).Routes(),
 
