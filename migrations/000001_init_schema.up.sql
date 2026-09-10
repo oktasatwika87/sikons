@@ -233,10 +233,7 @@ CREATE INDEX refresh_tokens_active_idx
 -- ---------------------------------------------------------------------------
 -- operasional
 -- ---------------------------------------------------------------------------
--- Kenapa tabel ini ada padahal antreannya sudah di Redis (asynq):
--- Redis adalah alat PENGIRIM, tabel ini adalah CATATAN. Kalau Redis di-flush
--- atau restart tanpa persistence, antreannya hilang dan tidak ada yang tahu
--- reminder mana yang belum terkirim. Pola outbox: tulis niat ke Postgres di
+-- Tabel notifications adalah pola outbox: tulis niat ke Postgres di
 -- transaction yang sama dengan booking-nya, worker yang mengeksekusi.
 CREATE TABLE notifications (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),

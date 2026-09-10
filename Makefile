@@ -13,7 +13,7 @@ export
 help: ## Tampilkan daftar perintah
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-up: ## Nyalakan Postgres + Redis
+up: ## Nyalakan Postgres
 	docker compose up -d
 	@echo "menunggu database siap..."
 	@until docker compose exec -T postgres pg_isready -U sikons -d sikons >/dev/null 2>&1; do sleep 1; done
