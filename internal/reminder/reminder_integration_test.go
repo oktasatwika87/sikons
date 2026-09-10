@@ -309,32 +309,28 @@ func TestReminderFailed_AfterMaxAttempts(t *testing.T) {
 	}
 }
 
-// TestReminderConcurrencyVerify_SKIP_LOCKED adalah mutation test untuk membuktikan
-// bahwa FOR UPDATE SKIP LOCKED BENAR-BENAR bekerja.
+// TestReminderConcurrencyVerify_SKIP_LOCKED memverifikasi bahwa FOR UPDATE SKIP LOCKED
+// bekerja secara deterministik.
 //
-// Mutation test steps:
-// 1. Comment out FOR UPDATE SKIP LOCKED di reminder.go
-// 2. Jalankan test: go test ./internal/reminder -v -run TestReminderConcurrencyVerify_SKIP_LOCKED
-// 3. Test akan GAGAL karena sender dipanggil lebih dari sekali (race condition)
-// 4. Kembalikan kodenya
+// DESAIN TEST:
+//  1. Buat SATU notification pending yang due.
+//  2. Blok FakeSender SEBELUM goroutine A jalan.
+//     A akan berhenti di tengah Send() sementara transaksinya masih terbuka —
+//     baris terkunci FOR UPDATE SKIP LOCKED.
+//  3. Saat A sudah ngeblock di Send(), jalankan goroutine B.
+//     B harus melihat baris terkunci dan skip (processed == 0), bukan tunggu.
+//  4. Unblock A, tunggu selesai, assert CallCount == 1.
 //
-// HASIL MUTATION TEST (tanpa FOR UPDATE SKIP LOCKED, dijalankan dengan TEST_DATABASE_URL):
-// --- FAIL: TestReminderConcurrencyVerify_SKIP_LOCKED (0.05s)
+// MUTATION TEST:
+//  1. Comment out FOR UPDATE SKIP LOCKED di reminder.go baris ~77
+//  2. Jalankan: go test ./internal/reminder -v -run TestReminderConcurrencyVerify_SKIP_LOCKED
+//  3. Tanpa lock, goroutine B melihat baris pending (MVCC READ COMMITTED) dan ikut
+//     memproses. TEST AKAN FAIL dengan CallCount >= 1 (B ikut proses).
+//  4. Kembalikan kodenya, test PASS.
 //
-//	reminder_integration_test.go:361: sender call count = 2, want 1
-//
-// Output asli:
-// === RUN   TestReminderConcurrencyVerify_SKIP_LOCKED
-// time=... level=INFO msg="reminder sent" notification_id=... to=... (dipanggil 2 kali)
-//
-//	reminder_integration_test.go:361: sender call count = 2, want 1
-//
-// --- FAIL: TestReminderConcurrencyVerify_SKIP_LOCKED (0.05s)
-//
-// Kesimpulan: FOR UPDATE SKIP LOCKED DIPERLUKAN untuk mencegah
-// double-processing notification yang sama. Race condition mungkin tidak selalu
-// muncul (tergantung timing Postgres), tapi race yang pernah terjadi membuktikan
-// bahwa tanpa lock, double-send adalah kemungkinan nyata.
+// Kenapa bukan assert CallCount == 2? Karena B mungkin tidak keburu jalan sebelum
+// A commit. Tapi assertion processedB == 0 jauh lebih kuat: ini MEMVERIFIKI
+// bahwa SKIP LOCKED bekerja, bukan sekadar race.
 func TestReminderConcurrencyVerify_SKIP_LOCKED(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t)
@@ -345,29 +341,78 @@ func TestReminderConcurrencyVerify_SKIP_LOCKED(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	svc := New(poolUji, fake, time.UTC, time.Minute, 5, log)
 
+	// Blok Send() SEBELUM goroutine A mulai.
+	// Saat A memanggil processBatch, transaksinya akan terbuka dan baris terkunci.
+	// A akan berhenti di Send() — transaksinya BELUM commit.
+	fake.Block()
+
 	ctx := context.Background()
 
-	// Barrier untuk memastikan kedua goroutine mulai bersamaan.
-	mulai := make(chan struct{})
-	var wg sync.WaitGroup
-	const goroutines = 2
-	wg.Add(goroutines)
+	// Channel untuk menerima hasil dari goroutine.
+	type result struct {
+		processed int
+		err       error
+	}
+	resultA := make(chan result, 1)
+	resultB := make(chan result, 1)
 
-	// Goroutine-goroutine sama-sama memanggil processBatch.
-	// Dengan FOR UPDATE SKIP LOCKED, hanya satu yang boleh memproses notification.
-	for i := 0; i < goroutines; i++ {
-		go func(idx int) {
-			defer wg.Done()
-			<-mulai
-			_, _ = svc.processBatch(ctx)
-		}(i)
+	// Goroutine A: memanggil processBatch.
+	// Dia akan berhenti di FakeSender.Send() karena di-block.
+	// Transaksinya masih terbuka, baris notification terkunci FOR UPDATE SKIP LOCKED.
+	go func() {
+		processed, err := svc.processBatch(ctx)
+		resultA <- result{processed, err}
+	}()
+
+	// Tunggu sampai A benar-benar masuk ke Send() dan berhenti.
+	// Poll SemaphoreCount() sampai >= 1, atau timeout 5 detik.
+	for i := 0; i < 5000; i++ {
+		if fake.SemaphoreCount() >= 1 {
+			break
+		}
+		time.Sleep(1 * time.Millisecond)
+	}
+	if fake.SemaphoreCount() < 1 {
+		t.Fatal("goroutine A tidak pernah sampai ke Send() — polling timeout")
 	}
 
-	close(mulai)
-	wg.Wait()
+	// Sekarang goroutine B: dia harus melihat baris terkunci dan SKIP.
+	// Dengan FOR UPDATE SKIP LOCKED, B akan melewati baris yang dikunci A.
+	// Tanpa lock, B mungkin ikut memproses (double-send).
+	go func() {
+		processed, err := svc.processBatch(ctx)
+		resultB <- result{processed, err}
+	}()
 
-	if fake.CallCount() != 1 {
-		t.Errorf("sender call count = %d, want 1", fake.CallCount())
+	// B harus pulang dengan processed == 0 (baris di-skip karena terkunci A).
+	select {
+	case r := <-resultB:
+		if r.processed != 0 {
+			t.Errorf("goroutine B processed = %d, want 0 (baris masih terkunci A)", r.processed)
+		}
+		if r.err != nil {
+			t.Errorf("goroutine B error: %v", r.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("goroutine B tidak selesai dalam 5 detik")
+	}
+
+	// Unblock A, tunggu selesai.
+	fake.Unblock()
+
+	select {
+	case r := <-resultA:
+		if fake.CallCount() != 1 {
+			t.Errorf("sender call count = %d, want 1", fake.CallCount())
+		}
+		if r.processed != 1 {
+			t.Errorf("goroutine A processed = %d, want 1", r.processed)
+		}
+		if r.err != nil {
+			t.Errorf("goroutine A error: %v", r.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("goroutine A tidak selesai dalam 5 detik setelah Unblock")
 	}
 }
 
@@ -397,6 +442,11 @@ type FakeSender struct {
 	calls      []SendCall
 	shouldFail bool
 	failErr    error
+	// blocked digunakan untuk sinkronisasi blocking. Kalau nil, Send() langsung lanjut.
+	blocked chan struct{}
+	// Semaphore untuk menghitung berapa pemanggilan yang sedang terblok di Send().
+	// Poll menggunakan ini untuk mengetahui apakah ada goroutine yang sedang di-block.
+	semaphore int32
 }
 
 type SendCall struct {
@@ -409,7 +459,44 @@ func NewFakeSender() *FakeSender {
 	return &FakeSender{}
 }
 
+// Block membuat FakeSender memblok setiap pemanggilan Send() sampai Unblock() dipanggil.
+// Ini dipakai untuk memastikan overlap transaksi yang sebenarnya di Postgres.
+func (f *FakeSender) Block() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.blocked = make(chan struct{})
+}
+
+// Unblock melepaskan semua goroutine yang sedang menunggu di Send().
+func (f *FakeSender) Unblock() {
+	f.mu.Lock()
+	ch := f.blocked
+	f.blocked = nil
+	f.mu.Unlock()
+	if ch != nil {
+		close(ch)
+	}
+}
+
+// SemaphoreCount mengembalikan jumlah pemanggilan yang sedang terblok.
+// Positif berarti ada goroutine yang sedang di-block di Send().
+func (f *FakeSender) SemaphoreCount() int32 {
+	return atomic.LoadInt32(&f.semaphore)
+}
+
 func (f *FakeSender) Send(ctx context.Context, to, subject, body string) error {
+	// Pertama: cek apakah perlu block.
+	f.mu.Lock()
+	if f.blocked != nil {
+		blocked := f.blocked
+		atomic.AddInt32(&f.semaphore, 1) // catat: ada yang mulai block
+		f.mu.Unlock()
+		<-blocked                         // tunggu sampai di-Unblock()
+		atomic.AddInt32(&f.semaphore, -1) // catat: sudah keluar dari block
+	} else {
+		f.mu.Unlock()
+	}
+	// Kedua: catat pemanggilan.
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, SendCall{To: to, Subject: subject, Body: body})
