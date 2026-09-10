@@ -17,7 +17,6 @@ type Config struct {
 	Env                 string // "development" | "production"
 	HTTPPort            string
 	DatabaseURL         string
-	RedisURL            string
 	LogLevel            slog.Level
 	JWTSecret           string
 	AccessTokenTTL      time.Duration
@@ -46,7 +45,6 @@ func Load() (Config, error) {
 		Env:         env("APP_ENV", "development"),
 		HTTPPort:    env("HTTP_PORT", "8080"),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
-		RedisURL:    env("REDIS_URL", "redis://localhost:6379/0"),
 		LogLevel:    parseLevel(env("LOG_LEVEL", "info")),
 		JWTSecret:   os.Getenv("JWT_SECRET"),
 	}

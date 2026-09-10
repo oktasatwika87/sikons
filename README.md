@@ -7,7 +7,7 @@
 
 ```bash
 cp .env.example .env
-make up            # Postgres + Redis
+make up            # Postgres
 make migrate-up    # bikin tabel
 make run           # API di http://localhost:8080
 ```
