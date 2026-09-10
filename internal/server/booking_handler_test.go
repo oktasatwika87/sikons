@@ -43,7 +43,7 @@ func buatServerUji(t *testing.T) *bookingTestHelper {
 		Auth:    auth.NewService(poolUji, tokens, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		Tokens:  tokens,
 		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Booking: booking.NewService(poolUji, cfg.BookingMinLeadMin),
+		Booking: booking.NewService(poolUji, cfg.BookingMinLeadMin, 3),
 	})
 
 	return &bookingTestHelper{
@@ -159,13 +159,30 @@ func (h *bookingTestHelper) buat3BookingAktif(mhsID, dosenID string) {
 	h.t.Helper()
 	for i := 0; i < 3; i++ {
 		slot := h.buatSlot(dosenID, time.Duration(24+i)*time.Hour)
-		_, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+		_, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
 			SlotID: slot, StudentID: mhsID, Topic: "Bimbingan",
 		})
 		if err != nil {
 			h.t.Fatalf("membuat booking ke-%d: %v", i+1, err)
 		}
 	}
+}
+
+// buatBooking langsung INSERT booking tanpa melewati Create (yang punya minLeadMinutes).
+func (h *bookingTestHelper) buatBooking(mhsID, slotID string) string {
+	h.t.Helper()
+	var id string
+	err := poolUji.QueryRow(context.Background(), `
+		INSERT INTO bookings (slot_id, student_id, topic, status)
+		VALUES ($1::uuid, $2::uuid, 'Test', 'confirmed')
+		RETURNING id::text`, slotID, mhsID).Scan(&id)
+	if err != nil {
+		h.t.Fatalf("membuat booking: %v", err)
+	}
+	// Set slot ke booked.
+	poolUji.Exec(context.Background(),
+		`UPDATE slots SET status = 'booked' WHERE id = $1::uuid`, slotID)
+	return id
 }
 
 // ---------------------------------------------------------------- test
@@ -703,10 +720,10 @@ func TestListBookings_MahasiswaHanyaLihatMiliknya(t *testing.T) {
 	slot1 := h.buatSlot(dosen, 24*time.Hour)
 	slot2 := h.buatSlot(dosen, 48*time.Hour)
 
-	_, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
 		SlotID: slot1, StudentID: mhs1ID, Topic: "Milik mhs1",
 	})
-	_, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
 		SlotID: slot2, StudentID: mhs2ID, Topic: "Milik mhs2",
 	})
 
@@ -751,10 +768,10 @@ func TestListBookings_DosenLihatDiSlotnya(t *testing.T) {
 	slot1 := h.buatSlot(dosen, 24*time.Hour)
 	slot2 := h.buatSlot(dosen, 48*time.Hour)
 
-	_, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
 		SlotID: slot1, StudentID: mhs1ID, Topic: "Bimbingan 1",
 	})
-	_, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
 		SlotID: slot2, StudentID: mhs2ID, Topic: "Bimbingan 2",
 	})
 
@@ -782,7 +799,7 @@ func TestGetBooking_MilikOrangLain(t *testing.T) {
 	_, tokenMhs2 := h.buatMahasiswa()
 	slot := h.buatSlot(dosen, 24*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhs1ID, Topic: "Bimbingan",
 	})
 	if err != nil {
@@ -805,7 +822,7 @@ func TestGetBooking_Success(t *testing.T) {
 	mhsID, tokenMhs := h.buatMahasiswa()
 	slot := h.buatSlot(dosen, 24*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhsID, Topic: "Bimbingan skripsi",
 	})
 	if err != nil {
@@ -838,7 +855,7 @@ func TestGetBooking_AdminDitolak(t *testing.T) {
 	_, tokenAdmin := h.buatAdmin()
 	slot := h.buatSlot(dosen, 24*time.Hour)
 
-	b, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhsID, Topic: "Bimbingan",
 	})
 	if err != nil {
@@ -852,5 +869,257 @@ func TestGetBooking_AdminDitolak(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, mau 404", w.Code)
+	}
+}
+
+// ---------------------------------------------------------------- test cancel HTTP
+
+func TestCancelBooking_HappyPath(t *testing.T) {
+	h := buatServerUji(t)
+	dosen, _ := h.buatDosen()
+	mhsID, tokenMhs := h.buatMahasiswa()
+	// Slot 5 jam dari sekarang — jauh dari H-3.
+	slot := h.buatSlot(dosen, 5*time.Hour)
+
+	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+		SlotID: slot, StudentID: mhsID, Topic: "Test cancel",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	reqBody := map[string]string{"reason": "Tidak jadi"}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+b.Booking.ID+"/cancel",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tokenMhs)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, mau 200. body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["status"] != "cancelled" {
+		t.Errorf("status = %v, mau cancelled", resp["status"])
+	}
+}
+
+func TestCancelBooking_OrangLain(t *testing.T) {
+	h := buatServerUji(t)
+	dosen, _ := h.buatDosen()
+	mhs1ID, _ := h.buatMahasiswa()
+	_, tokenMhs2 := h.buatMahasiswa()
+	slot := h.buatSlot(dosen, 5*time.Hour)
+
+	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+		SlotID: slot, StudentID: mhs1ID, Topic: "Milik mhs1",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+b.Booking.ID+"/cancel", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenMhs2)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	// Harus 404, bukan 403 — tidak membocorkan keberadaan booking orang lain.
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, mau 404", w.Code)
+	}
+}
+
+func TestCancelBooking_TerlaluDekat(t *testing.T) {
+	h := buatServerUji(t)
+	dosen, _ := h.buatDosen()
+	mhsID, tokenMhs := h.buatMahasiswa()
+	// Slot 2 jam dari sekarang — kurang dari H-3.
+	slot := h.buatSlot(dosen, 2*time.Hour)
+
+	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+		SlotID: slot, StudentID: mhsID, Topic: "Terlalu dekat",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+b.Booking.ID+"/cancel", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenMhs)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, mau 422", w.Code)
+	}
+	var errResp map[string]map[string]string
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	if errResp["error"]["code"] != "CANCEL_TOO_LATE" {
+		t.Errorf("code = %q, mau CANCEL_TOO_LATE", errResp["error"]["code"])
+	}
+}
+
+func TestCancelBooking_DosenDitolak(t *testing.T) {
+	h := buatServerUji(t)
+	dosenID, tokenDosen := h.buatDosen()
+	mhsID, _ := h.buatMahasiswa()
+	slot := h.buatSlot(dosenID, 5*time.Hour)
+
+	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+		SlotID: slot, StudentID: mhsID, Topic: "Test",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+b.Booking.ID+"/cancel", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenDosen)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	// Harus 403 — route cancel dilindungi requireRole(auth.RoleStudent).
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, mau 403", w.Code)
+	}
+}
+
+// ---------------------------------------------------------------- test complete HTTP
+
+func TestCompleteBooking_HappyPath(t *testing.T) {
+	h := buatServerUji(t)
+	dosenID, tokenDosen := h.buatDosen()
+	mhsID, _ := h.buatMahasiswa()
+	// Slot di masa lalu — insert booking langsung.
+	slot := h.buatSlot(dosenID, -5*time.Hour)
+	bookingID := h.buatBooking(mhsID, slot)
+
+	reqBody := map[string]string{"lecturer_note": "Sesi produktif"}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+bookingID+"/complete",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tokenDosen)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, mau 200. body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["status"] != "completed" {
+		t.Errorf("status = %v, mau completed", resp["status"])
+	}
+}
+
+func TestCompleteBooking_MahasiswaDitolak(t *testing.T) {
+	h := buatServerUji(t)
+	dosenID, _ := h.buatDosen()
+	mhsID, tokenMhs := h.buatMahasiswa()
+	slot := h.buatSlot(dosenID, -5*time.Hour)
+	bookingID := h.buatBooking(mhsID, slot)
+
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+bookingID+"/complete", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenMhs)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	// Harus 403 — route complete dilindungi requireRole(auth.RoleLecturer).
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, mau 403", w.Code)
+	}
+}
+
+func TestCompleteBooking_DosenLain(t *testing.T) {
+	h := buatServerUji(t)
+	dosen1ID, _ := h.buatDosen()
+	_, tokenDosen2 := h.buatDosen()
+	mhsID, _ := h.buatMahasiswa()
+	slot := h.buatSlot(dosen1ID, -5*time.Hour)
+	bookingID := h.buatBooking(mhsID, slot)
+
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+bookingID+"/complete", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenDosen2)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	// Harus 404 — dosen2 bukan pemilik slot.
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, mau 404", w.Code)
+	}
+}
+
+func TestCompleteBooking_SebelumStart(t *testing.T) {
+	h := buatServerUji(t)
+	dosenID, tokenDosen := h.buatDosen()
+	mhsID, _ := h.buatMahasiswa()
+	// Slot di masa depan — belum dimulai.
+	slot := h.buatSlot(dosenID, 5*time.Hour)
+
+	b, err := booking.NewService(poolUji, 60, 3).Create(context.Background(), booking.CreateInput{
+		SlotID: slot, StudentID: mhsID, Topic: "Test",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+b.Booking.ID+"/complete", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenDosen)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, mau 422", w.Code)
+	}
+	var errResp map[string]map[string]string
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	if errResp["error"]["code"] != "SESSION_NOT_STARTED" {
+		t.Errorf("code = %q, mau SESSION_NOT_STARTED", errResp["error"]["code"])
+	}
+}
+
+// ---------------------------------------------------------------- test no-show HTTP
+
+func TestNoShowBooking_HappyPath(t *testing.T) {
+	h := buatServerUji(t)
+	dosenID, tokenDosen := h.buatDosen()
+	mhsID, _ := h.buatMahasiswa()
+	slot := h.buatSlot(dosenID, -5*time.Hour)
+	bookingID := h.buatBooking(mhsID, slot)
+
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+bookingID+"/no-show", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenDosen)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, mau 200. body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["status"] != "no_show" {
+		t.Errorf("status = %v, mau no_show", resp["status"])
+	}
+}
+
+func TestNoShowBooking_MahasiswaDitolak(t *testing.T) {
+	h := buatServerUji(t)
+	dosenID, _ := h.buatDosen()
+	mhsID, tokenMhs := h.buatMahasiswa()
+	slot := h.buatSlot(dosenID, -5*time.Hour)
+	bookingID := h.buatBooking(mhsID, slot)
+
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+bookingID+"/no-show", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenMhs)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, mau 403", w.Code)
 	}
 }

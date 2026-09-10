@@ -4,13 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/oktasatwika/sikons/internal/slotgen"
 )
 
 // Test di file ini adalah INTEGRATION TEST: butuh Postgres sungguhan.
@@ -139,6 +145,24 @@ func buatSlot(t *testing.T, dosenID string, mulaiDalam time.Duration) string {
 	return id
 }
 
+// buatSlotDimulai membuat slot yang SUDAH dimulai sejak `yangLalu`.
+// Ini untuk test Complete/NoShow yang butuh slot yang sudah dimulai.
+func buatSlotDimulai(t *testing.T, dosenID string, yangLalu time.Duration) string {
+	t.Helper()
+	var id string
+	err := poolUji.QueryRow(context.Background(), `
+		INSERT INTO slots (lecturer_id, start_at, end_at)
+		VALUES ($1::uuid,
+		        now() - $2::interval,
+		        now() - $2::interval + interval '30 minutes')
+		RETURNING id::text`,
+		dosenID, fmt.Sprintf("%d seconds", int(yangLalu.Seconds()))).Scan(&id)
+	if err != nil {
+		t.Fatalf("membuat slot: %v", err)
+	}
+	return id
+}
+
 func hitungBookingAktif(t *testing.T, slotID string) int {
 	t.Helper()
 	var n int
@@ -169,7 +193,7 @@ func TestCreate_SuksesSaatSlotMasihOpen(t *testing.T) {
 	mhs := buatMahasiswa(t, 1)
 	slot := buatSlot(t, dosen, 72*time.Hour)
 
-	result, err := NewService(poolUji, 60).Create(context.Background(), CreateInput{
+	result, err := NewService(poolUji, 60, 3).Create(context.Background(), CreateInput{
 		SlotID: slot, StudentID: mhs[0], Topic: "Bimbingan skripsi",
 	})
 	if err != nil {
@@ -196,7 +220,7 @@ func TestCreate_SuksesSaatSlotMasihOpen(t *testing.T) {
 func TestCreate_SlotTidakAda(t *testing.T) {
 	mhs := buatMahasiswa(t, 1)
 
-	_, err := NewService(poolUji, 60).Create(context.Background(), CreateInput{
+	_, err := NewService(poolUji, 60, 3).Create(context.Background(), CreateInput{
 		SlotID:    "00000000-0000-0000-0000-000000000000",
 		StudentID: mhs[0], Topic: "x",
 	})
@@ -209,7 +233,7 @@ func TestCreate_SlotSudahDipesanOrangLain(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 2)
 	slot := buatSlot(t, dosen, 72*time.Hour)
-	svc := NewService(poolUji, 60)
+	svc := NewService(poolUji, 60, 3)
 
 	_, err := svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "duluan"})
@@ -231,7 +255,7 @@ func TestCreate_SlotSudahDipesanOrangLain(t *testing.T) {
 func TestCreate_BatasTigaBookingAktif(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60)
+	svc := NewService(poolUji, 60, 3)
 
 	for i := 0; i < DefaultMaxActiveBookings; i++ {
 		slot := buatSlot(t, dosen, time.Duration(24+i)*time.Hour)
@@ -254,7 +278,7 @@ func TestCreate_BatasTigaBookingAktif(t *testing.T) {
 func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60)
+	svc := NewService(poolUji, 60, 3)
 
 	// Tiga slot di masa lalu, diisi langsung lewat SQL karena Create wajar saja
 	// menolak slot yang sudah lewat nanti di M3.
@@ -280,7 +304,7 @@ func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
 func TestCreate_SlotDitarik(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60)
+	svc := NewService(poolUji, 60, 3)
 
 	slot := buatSlot(t, dosen, 72*time.Hour)
 
@@ -317,7 +341,7 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, jumlah)
 	slot := buatSlot(t, dosen, 72*time.Hour)
-	svc := NewService(poolUji, 60)
+	svc := NewService(poolUji, 60, 3)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -407,7 +431,7 @@ func TestCreate_SatuMahasiswaMenembakSepuluhSlotSekaligus(t *testing.T) {
 
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	svc := NewService(poolUji, 60)
+	svc := NewService(poolUji, 60, 3)
 
 	slots := make([]string, jumlah)
 	for i := range slots {
@@ -476,7 +500,7 @@ func TestCreate_IdempotencyKeyKlaimBerhasil(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
 	slot := buatSlot(t, dosen, 72*time.Hour)
-	svc := NewService(poolUji, 60)
+	svc := NewService(poolUji, 60, 3)
 
 	key := "test-key-" + unik()
 	hash := ComputeRequestHash(slot, "Topik", "")
@@ -546,4 +570,314 @@ func bytesContains(haystack, needle []byte) bool {
 		}
 	}
 	return false
+}
+
+// ---------------------------------------------------------------- test cancel
+
+func TestCancel_Success(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji, 60, 3)
+
+	// Slot mulai 5 jam dari sekarang — lebih dari H-3.
+	slot := buatSlot(t, dosen, 5*time.Hour)
+	b, err := svc.Create(context.Background(), CreateInput{
+		SlotID: slot, StudentID: mhs[0], Topic: "Test cancel",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	view, err := svc.Cancel(context.Background(), b.Booking.ID, mhs[0], "Tidak jadi")
+	if err != nil {
+		t.Fatalf("cancel gagal: %v", err)
+	}
+	if view.Status != "cancelled" {
+		t.Errorf("status = %q, mau cancelled", view.Status)
+	}
+	if s := statusSlot(t, slot); s != "open" {
+		t.Errorf("status slot = %q, mau open", s)
+	}
+}
+
+func TestCancel_TerlaluDekatH3Jam(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji, 60, 3)
+
+	// Slot mulai 2 jam dari sekarang — kurang dari H-3.
+	slot := buatSlot(t, dosen, 2*time.Hour)
+	b, err := svc.Create(context.Background(), CreateInput{
+		SlotID: slot, StudentID: mhs[0], Topic: "Terlalu dekat",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	_, err = svc.Cancel(context.Background(), b.Booking.ID, mhs[0], "")
+	if !errors.Is(err, ErrCancelTooLate) {
+		t.Fatalf("err = %v, mau ErrCancelTooLate", err)
+	}
+	// Slot tidak berubah.
+	if s := statusSlot(t, slot); s != "booked" {
+		t.Errorf("status slot = %q, mau booked", s)
+	}
+	if n := hitungBookingAktif(t, slot); n != 1 {
+		t.Errorf("booking aktif = %d, mau 1", n)
+	}
+}
+
+func TestCancel_SudahCancelled(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji, 60, 3)
+
+	slot := buatSlot(t, dosen, 5*time.Hour)
+	b, err := svc.Create(context.Background(), CreateInput{
+		SlotID: slot, StudentID: mhs[0], Topic: "Dua kali cancel",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	_, err = svc.Cancel(context.Background(), b.Booking.ID, mhs[0], "")
+	if err != nil {
+		t.Fatalf("cancel pertama gagal: %v", err)
+	}
+
+	_, err = svc.Cancel(context.Background(), b.Booking.ID, mhs[0], "")
+	if !errors.Is(err, ErrBookingAlreadyCancelled) {
+		t.Fatalf("err = %v, mau ErrBookingAlreadyCancelled", err)
+	}
+}
+
+func TestCancel_Completed(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji, 60, 3)
+
+	// Buat slot yang sudah dimulai 30 menit lalu.
+	slot := buatSlotDimulai(t, dosen, 30*time.Minute)
+
+	// Booking langsung via SQL karena Create tidak mau buat di slot yang sudah dimulai.
+	var bookingID string
+	err := poolUji.QueryRow(context.Background(), `
+		INSERT INTO bookings (slot_id, student_id, topic, status)
+		VALUES ($1::uuid, $2::uuid, 'Test completed', 'confirmed')
+		RETURNING id::text`, slot, mhs[0]).Scan(&bookingID)
+	if err != nil {
+		t.Fatalf("membuat booking: %v", err)
+	}
+
+	// Dosen complete dulu.
+	_, err = svc.Complete(context.Background(), bookingID, dosen, "Selesai")
+	if err != nil {
+		t.Fatalf("complete gagal: %v", err)
+	}
+
+	// Mahasiswa coba cancel — harus gagal.
+	_, err = svc.Cancel(context.Background(), bookingID, mhs[0], "")
+	if !errors.Is(err, ErrBookingAlreadyFinalized) {
+		t.Fatalf("err = %v, mau ErrBookingAlreadyFinalized", err)
+	}
+}
+
+// ---------------------------------------------------------------- test complete
+
+// helper buatBooking langsung INSERT booking tanpa melewati Create (yang punya
+// constraint minLeadMinutes).
+func buatBooking(t *testing.T, slotID, studentID, status string) string {
+	t.Helper()
+	var id string
+	err := poolUji.QueryRow(context.Background(), `
+		INSERT INTO bookings (slot_id, student_id, topic, status)
+		VALUES ($1::uuid, $2::uuid, 'Test', $3)
+		RETURNING id::text`, slotID, studentID, status).Scan(&id)
+	if err != nil {
+		t.Fatalf("membuat booking: %v", err)
+	}
+	return id
+}
+
+func TestComplete_SebelumStartAt(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji, 60, 3)
+
+	// Slot di masa depan (belum dimulai) tapi booking sudah ada.
+	slot := buatSlot(t, dosen, 5*time.Hour)
+	bookingID := buatBooking(t, slot, mhs[0], "confirmed")
+
+	_, err := svc.Complete(context.Background(), bookingID, dosen, "")
+	if !errors.Is(err, ErrSessionNotStarted) {
+		t.Fatalf("err = %v, mau ErrSessionNotStarted", err)
+	}
+}
+
+func TestComplete_Success(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji, 60, 3)
+
+	// Slot di masa lalu (sudah dimulai).
+	slot := buatSlotDimulai(t, dosen, 15*time.Minute)
+	bookingID := buatBooking(t, slot, mhs[0], "confirmed")
+
+	// Set slot ke booked (Complete/NoShow tidak mengubah slot).
+	poolUji.Exec(context.Background(),
+		`UPDATE slots SET status = 'booked' WHERE id = $1::uuid`, slot)
+
+	view, err := svc.Complete(context.Background(), bookingID, dosen, "Topik terbahas semua")
+	if err != nil {
+		t.Fatalf("complete gagal: %v", err)
+	}
+	if view.Status != "completed" {
+		t.Errorf("status = %q, mau completed", view.Status)
+	}
+	// Slot tetap 'booked' karena booking completed — tidak ada logika pengembalian.
+	if s := statusSlot(t, slot); s != "booked" {
+		t.Errorf("status slot = %q, mau booked", s)
+	}
+}
+
+func TestComplete_SudahCompleted(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji, 60, 3)
+
+	slot := buatSlotDimulai(t, dosen, 30*time.Minute)
+	bookingID := buatBooking(t, slot, mhs[0], "confirmed")
+
+	_, err := svc.Complete(context.Background(), bookingID, dosen, "Pertama")
+	if err != nil {
+		t.Fatalf("complete pertama gagal: %v", err)
+	}
+
+	_, err = svc.Complete(context.Background(), bookingID, dosen, "Kedua")
+	if !errors.Is(err, ErrBookingNotConfirmed) {
+		t.Fatalf("err = %v, mau ErrBookingNotConfirmed", err)
+	}
+}
+
+// ---------------------------------------------------------------- test no-show
+
+func TestNoShow_SebelumStartAt(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji, 60, 3)
+
+	slot := buatSlot(t, dosen, 5*time.Hour)
+	bookingID := buatBooking(t, slot, mhs[0], "confirmed")
+
+	_, err := svc.NoShow(context.Background(), bookingID, dosen)
+	if !errors.Is(err, ErrSessionNotStarted) {
+		t.Fatalf("err = %v, mau ErrSessionNotStarted", err)
+	}
+}
+
+func TestNoShow_Success(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+	svc := NewService(poolUji, 60, 3)
+
+	slot := buatSlotDimulai(t, dosen, 20*time.Minute)
+	bookingID := buatBooking(t, slot, mhs[0], "confirmed")
+	// Set slot ke booked (mirroring normal flow).
+	poolUji.Exec(context.Background(),
+		`UPDATE slots SET status = 'booked' WHERE id = $1::uuid`, slot)
+
+	view, err := svc.NoShow(context.Background(), bookingID, dosen)
+	if err != nil {
+		t.Fatalf("no-show gagal: %v", err)
+	}
+	if view.Status != "no_show" {
+		t.Errorf("status = %q, mau no_show", view.Status)
+	}
+	// Slot tetap 'booked' karena NoShow tidak mengubah slot.
+	if s := statusSlot(t, slot); s != "booked" {
+		t.Errorf("status slot = %q, mau booked", s)
+	}
+}
+
+// ---------------------------------------------------------------- test deadlock
+
+// TestCancel_BarengReconcileTidakDeadlock membuktikan urutan kunci slot->booking
+// di Cancel tidak menyebabkan deadlock dengan Reconcile.
+//
+// Mekanisme: dua goroutine dijalankan SERENTAN lewat barrier close(mulai),
+// satu memanggil Cancel, satu memanggil Reconcile untuk slot yang SAMA.
+// Context timeout pendek (10 detik) menangkap kalau deadlock benar-benar terjadi.
+// Test ini dijalankan 10x untuk menangkap race condition.
+func TestCancel_BarengReconcileTidakDeadlock(t *testing.T) {
+	dosen := buatDosen(t)
+	mhs := buatMahasiswa(t, 1)
+
+	// Buat slot dan booking.
+	slot := buatSlot(t, dosen, 5*time.Hour)
+	svc := NewService(poolUji, 60, 3)
+	b, err := svc.Create(context.Background(), CreateInput{
+		SlotID: slot, StudentID: mhs[0], Topic: "Deadlock test",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	// Jalankan 10 kali.
+	for i := 0; i < 10; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		mulai := make(chan struct{})
+
+		// Goroutine A: Cancel.
+		var errA error
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-mulai
+			_, errA = svc.Cancel(ctx, b.Booking.ID, mhs[0], "")
+		}()
+
+		// Goroutine B: Reconcile.
+		// Hapus aturan ketersediaan dulu supaya slot masuk ke branch withdrawn.
+		poolUji.Exec(ctx, `DELETE FROM availability_rules WHERE lecturer_id = $1::uuid`, dosen)
+
+		var errB error
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-mulai
+			// Slotgen butuh availability rules untuk reconcile.
+			// Buat aturan baru yang TIDAK cover slot ini.
+			_, err = poolUji.Exec(ctx, `
+				INSERT INTO availability_rules (lecturer_id, day_of_week, start_time, end_time,
+				                               slot_duration_min, effective_from)
+				VALUES ($1::uuid, 9, '09:00', '10:00', 60, now()::date + 7)`,
+				dosen)
+			// Sekarang reconcile akan menarik slot yang sekarang.
+			sg := slotgen.New(poolUji, time.Local, 30)
+			testLog := slog.New(slog.NewTextHandler(io.Discard, nil))
+			_, errB = sg.Reconcile(ctx, dosen, time.Now(), time.Now().Add(30*24*time.Hour), testLog)
+		}()
+
+		close(mulai)
+		wg.Wait()
+
+		// Tidak boleh ada error deadlock (40P01) dari Postgres.
+		if errA != nil && isDeadlockError(errA) {
+			t.Fatalf("iterasi %d: Cancel kena deadlock: %v", i, errA)
+		}
+		if errB != nil && isDeadlockError(errB) {
+			t.Fatalf("iterasi %d: Reconcile kena deadlock: %v", i, errB)
+		}
+	}
+}
+
+func isDeadlockError(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "40P01"
+	}
+	return strings.Contains(err.Error(), "deadlock")
 }
