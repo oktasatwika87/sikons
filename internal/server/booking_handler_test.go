@@ -96,6 +96,25 @@ func (h *bookingTestHelper) buatMahasiswa() (id, token string) {
 	return idMhs, accessToken
 }
 
+func (h *bookingTestHelper) buatAdmin() (id, token string) {
+	h.t.Helper()
+	var idAdm string
+	err := poolUji.QueryRow(context.Background(), `
+		INSERT INTO users (email, password_hash, full_name, role)
+		VALUES ('admin-' || gen_random_uuid()::text || '@uji.local', 'x', 'Admin Uji', 'admin')
+		RETURNING id::text`,
+	).Scan(&idAdm)
+	if err != nil {
+		h.t.Fatalf("membuat admin: %v", err)
+	}
+
+	accessToken, _, err := h.server.tokens.Issue(auth.Identity{UserID: idAdm, Role: "admin"})
+	if err != nil {
+		h.t.Fatalf("membuat access token: %v", err)
+	}
+	return idAdm, accessToken
+}
+
 func (h *bookingTestHelper) buatSlot(dosenID string, mulaiDalam time.Duration) string {
 	h.t.Helper()
 	var id string
@@ -809,5 +828,29 @@ func TestGetBooking_Success(t *testing.T) {
 	}
 	if resp["topic"] != "Bimbingan skripsi" {
 		t.Errorf("topic = %v, mau 'Bimbingan skripsi'", resp["topic"])
+	}
+}
+
+func TestGetBooking_AdminDitolak(t *testing.T) {
+	h := buatServerUji(t)
+	dosen, _ := h.buatDosen()
+	mhsID, _ := h.buatMahasiswa()
+	_, tokenAdmin := h.buatAdmin()
+	slot := h.buatSlot(dosen, 24*time.Hour)
+
+	b, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+		SlotID: slot, StudentID: mhsID, Topic: "Bimbingan",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/bookings/"+b.Booking.ID, nil)
+	req.Header.Set("Authorization", "Bearer "+tokenAdmin)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, mau 404", w.Code)
 	}
 }
