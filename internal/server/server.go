@@ -135,9 +135,16 @@ func (s *Server) Routes() http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireRole(auth.RoleStudent))
 				r.Post("/bookings", s.handleCreateBooking)
+				r.Patch("/bookings/{id}/cancel", s.handleCancelBooking)
 			})
 			r.Get("/bookings", s.handleListBookings)
 			r.Get("/bookings/{id}", s.handleGetBooking)
+			// Dosen hanya: complete dan no-show.
+			r.Group(func(r chi.Router) {
+				r.Use(s.requireRole(auth.RoleLecturer))
+				r.Patch("/bookings/{id}/complete", s.handleCompleteBooking)
+				r.Patch("/bookings/{id}/no-show", s.handleNoShowBooking)
+			})
 		})
 	})
 

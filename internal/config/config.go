@@ -14,16 +14,17 @@ import (
 )
 
 type Config struct {
-	Env                string // "development" | "production"
-	HTTPPort           string
-	DatabaseURL        string
-	RedisURL           string
-	LogLevel           slog.Level
-	JWTSecret          string
-	AccessTokenTTL     time.Duration
-	CampusTZ           *time.Location // zona waktu kampus, misal Asia/Jakarta
-	SlotHorizonDays    int             // berapa hari ke depan slot harus di-generate
-	BookingMinLeadMin  int             // minimal menit sebelum slot boleh dipesan
+	Env                  string // "development" | "production"
+	HTTPPort             string
+	DatabaseURL           string
+	RedisURL             string
+	LogLevel             slog.Level
+	JWTSecret            string
+	AccessTokenTTL       time.Duration
+	CampusTZ             *time.Location // zona waktu kampus, misal Asia/Jakarta
+	SlotHorizonDays      int             // berapa hari ke depan slot harus di-generate
+	BookingMinLeadMin    int             // minimal menit sebelum slot boleh dipesan
+	BookingCancelMinHrs  int             // minimal jam sebelum slot boleh dibatalkan mahasiswa
 }
 
 // Load membaca env dan mengembalikan error kalau ada yang wajib tapi kosong.
@@ -77,6 +78,17 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("BOOKING_MIN_LEAD_MINUTES %q harus angka non-negatif: %w", l, err)
 		}
 		cfg.BookingMinLeadMin = n
+	}
+
+	// Minimal jam sebelum slot boleh dibatalkan mahasiswa. Default 3 jam.
+	cfg.BookingCancelMinHrs = 3
+	if h := os.Getenv("BOOKING_CANCEL_MIN_HOURS"); h != "" {
+		var n int
+		_, err := fmt.Sscanf(h, "%d", &n)
+		if err != nil || n < 0 {
+			return Config{}, fmt.Errorf("BOOKING_CANCEL_MIN_HOURS %q harus angka non-negatif: %w", h, err)
+		}
+		cfg.BookingCancelMinHrs = n
 	}
 
 	// Dikumpulkan dulu semuanya, baru dilaporkan sekaligus. Melaporkan satu
