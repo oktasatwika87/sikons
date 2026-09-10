@@ -39,7 +39,7 @@ func buatServerUji(t *testing.T) *bookingTestHelper {
 	}
 
 	srv := New(cfg, Deps{
-		Pool:    poolUji,
+		DB:      poolUji,
 		Auth:    auth.NewService(poolUji, tokens, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		Tokens:  tokens,
 		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -140,7 +140,7 @@ func (h *bookingTestHelper) buat3BookingAktif(mhsID, dosenID string) {
 	h.t.Helper()
 	for i := 0; i < 3; i++ {
 		slot := h.buatSlot(dosenID, time.Duration(24+i)*time.Hour)
-		_, _, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+		_, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
 			SlotID: slot, StudentID: mhsID, Topic: "Bimbingan",
 		})
 		if err != nil {
@@ -273,75 +273,192 @@ func TestCreateBooking_IdempotencyKeyBodyBeda(t *testing.T) {
 	}
 }
 
+// TestCreateBooking_ConcurrencyDenganIdempotencyKey menguji bahwa 10 retry
+// IDENTIK (satu mahasiswa, satu idempotency key) yang masuk bersamaan semuanya
+// diselesaikan dengan benar: satu pemenang menyimpan booking, sisanya me-replay
+// booking yang sama.
+//
+// Catatan penting kenapa ini beda dari test paralel tanpa key: idempotency key
+// punya scope (user_id, key). Kalau setiap goroutine memakai key berbeda,
+// mereka adalah request BUKAN kembar menurut mekanisme idempotency —
+// mereka akan saling berebut slot. Test ini baru bermakna kalau semua retry
+// memakai key yang PERSIS SAMA.
+//
+// Pola barrier `<-mulai` + `close(mulai)` dipakai supaya semua goroutine
+// dilepas serentak. Tanpa barrier, goroutine pertama selesai sebelum yang
+// kedua sempat dibuat, dan yang diuji bukan race yang sebenarnya.
 func TestCreateBooking_ConcurrencyDenganIdempotencyKey(t *testing.T) {
 	h := buatServerUji(t)
 	dosen, _ := h.buatDosen()
-	// SATU mahasiswa, 10 retry dengan idempotency key yang sama.
-	// Idempotency key punya scope (user_id, key), jadi ini menguji skenario:
-	// user menekan tombol beberapa kali karena timeout.
 	_, tokenMhs := h.buatMahasiswa()
 	slot := h.buatSlot(dosen, 72*time.Hour)
 
-	key := "concurrent-test-key-12345678"
+	key := "concurrent-test-key-" + fmt.Sprint(time.Now().UnixNano())
 	reqBody := map[string]string{"slot_id": slot, "topic": "Bimbingan skripsi", "description": ""}
 	body, _ := json.Marshal(reqBody)
 
-	// Test: request pertama langsung, sisanya dijalankan SEQUENTIAL
-	// setelah request pertama selesai (retry karena timeout).
-	results := make([]*httptest.ResponseRecorder, 10)
+	const jumlah = 10
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-	// Request pertama
-	req0 := httptest.NewRequest("POST", "/api/v1/bookings", bytes.NewReader(body))
-	req0.Header.Set("Content-Type", "application/json")
-	req0.Header.Set("Authorization", "Bearer "+tokenMhs)
-	req0.Header.Set("Idempotency-Key", key)
-	w0 := httptest.NewRecorder()
-	h.router.ServeHTTP(w0, req0)
-	results[0] = w0
+	mulai := make(chan struct{})
+	// Tiap goroutine menulis ke indeksnya sendiri -> tidak ada shared state,
+	// aman tanpa mutex. go test -race akan membuktikan klaim ini.
+	hasil := make([]*httptest.ResponseRecorder, jumlah)
 
-	// Request 1-9 dijalankan sequential setelah request 0 selesai (retry).
-	for i := 1; i < 10; i++ {
-		req := httptest.NewRequest("POST", "/api/v1/bookings", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+tokenMhs)
-		req.Header.Set("Idempotency-Key", key)
-		w := httptest.NewRecorder()
-		h.router.ServeHTTP(w, req)
-		results[i] = w
+	var wg sync.WaitGroup
+	for i := 0; i < jumlah; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-mulai
+
+			req := httptest.NewRequest("POST", "/api/v1/bookings", bytes.NewReader(body))
+			req = req.WithContext(ctx)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+tokenMhs)
+			req.Header.Set("Idempotency-Key", key)
+			w := httptest.NewRecorder()
+			h.router.ServeHTTP(w, req)
+			hasil[idx] = w
+		}(i)
 	}
 
-	// Semua harus berhasil: winner 201, loser replay 201.
-	var sukses int
+	close(mulai)
+	wg.Wait()
+
+	// Semua 10 response harus 201, id harus identik, dan TEPAT SATU tanpa
+	// header Idempotency-Replayed.
 	var idPertama string
-	for i, w := range results {
-		if w.Code == http.StatusCreated {
-			sukses++
-			replayed := w.Header().Get("Idempotency-Replayed")
-			if i == 0 && replayed == "true" {
-				t.Errorf("request 0 tidak boleh replay")
-			}
-			if i > 0 && replayed != "true" {
-				t.Errorf("request %d harus replay", i)
-			}
-			var resp map[string]string
-			json.Unmarshal(w.Body.Bytes(), &resp)
-			if idPertama == "" {
-				idPertama = resp["id"]
-			} else if resp["id"] != idPertama {
-				t.Errorf("booking id berbeda: %s vs %s", resp["id"], idPertama)
-			}
-		} else {
-			t.Errorf("request %d gagal: status=%d, body=%s", i, w.Code, w.Body.String())
+	var replayCount int
+	for i, w := range hasil {
+		if w.Code != http.StatusCreated {
+			t.Errorf("request %d: status = %d, body = %s", i, w.Code, w.Body.String())
+			continue
+		}
+		var resp map[string]string
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Errorf("request %d: body bukan JSON: %v", i, err)
+			continue
+		}
+		if resp["id"] == "" {
+			t.Errorf("request %d: id kosong", i)
+			continue
+		}
+		if idPertama == "" {
+			idPertama = resp["id"]
+		} else if resp["id"] != idPertama {
+			t.Errorf("request %d: id = %s, mau %s", i, resp["id"], idPertama)
+		}
+		if w.Header().Get("Idempotency-Replayed") == "true" {
+			replayCount++
 		}
 	}
 
-	if sukses != 10 {
-		t.Errorf("sukses = %d, mau 10", sukses)
+	// Tepat satu yang TIDAK replay (= yang pertama menang).
+	if replayCount != jumlah-1 {
+		t.Errorf("replay = %d, mau %d (satu pemenang, sisanya replay)", replayCount, jumlah-1)
 	}
 
-	// Hanya ada 1 baris booking.
+	// Satu baris di bookings.
 	if n := h.hitungBooking(slot); n != 1 {
 		t.Errorf("booking = %d, mau 1", n)
+	}
+}
+
+// TestCreateBooking_ReplayMengembalikanBookingPertamaBukanYangTerbaru memastikan
+// sumber kebenaran replay adalah response_body yang tersimpan di
+// idempotency_keys, BUKAN query ulang ke tabel bookings.
+//
+// Skenario:
+//
+//  1. booking dengan key K -> dapat id A
+//  2. cancel A lewat SQL
+//  3. booking slot yang sama TANPA key -> dapat id B
+//  4. ulang request dengan key K -> HARUS dapat id A, bukan id B
+//
+// Kalau jalur replay memilih query ulang `WHERE slot_id=X AND student_id=Y`,
+// langkah 4 akan mengembalikan id B — bug yang persis yang harus dicegah.
+func TestCreateBooking_ReplayMengembalikanBookingPertamaBukanYangTerbaru(t *testing.T) {
+	h := buatServerUji(t)
+	dosen, _ := h.buatDosen()
+	idUser, tokenMhs := h.buatMahasiswa()
+	slot := h.buatSlot(dosen, 72*time.Hour)
+
+	key := "cancel-rebook-key-" + fmt.Sprint(time.Now().UnixNano())
+	reqBody := map[string]string{"slot_id": slot, "topic": "Bimbingan skripsi", "description": ""}
+	body, _ := json.Marshal(reqBody)
+
+	// 1. Booking pertama dengan key K.
+	req1 := httptest.NewRequest("POST", "/api/v1/bookings", bytes.NewReader(body))
+	req1.Header.Set("Content-Type", "application/json")
+	req1.Header.Set("Authorization", "Bearer "+tokenMhs)
+	req1.Header.Set("Idempotency-Key", key)
+	w1 := httptest.NewRecorder()
+	h.router.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusCreated {
+		t.Fatalf("booking pertama: status = %d, body = %s", w1.Code, w1.Body.String())
+	}
+	var resp1 map[string]string
+	json.Unmarshal(w1.Body.Bytes(), &resp1)
+	idA := resp1["id"]
+	if idA == "" {
+		t.Fatal("booking pertama tidak mengembalikan id")
+	}
+
+	// 2. Cancel booking pertama lewat SQL. cancelled_by ambil id mahasiswa.
+	if _, err := poolUji.Exec(context.Background(), `
+		UPDATE bookings
+		SET status = 'cancelled',
+		    cancelled_at = now(),
+		    cancelled_by = $2::uuid
+		WHERE id = $1::uuid`, idA, idUser); err != nil {
+		t.Fatalf("membatalkan booking: %v", err)
+	}
+
+	// Reset slot supaya bisa dipesan ulang.
+	if _, err := poolUji.Exec(context.Background(),
+		`UPDATE slots SET status = 'open' WHERE id = $1::uuid`, slot); err != nil {
+		t.Fatalf("reset slot: %v", err)
+	}
+
+	// 3. Booking ulang TANPA idempotency key -> id baru B.
+	req2Body := map[string]string{"slot_id": slot, "topic": "Bimbingan skripsi", "description": ""}
+	body2, _ := json.Marshal(req2Body)
+	req2 := httptest.NewRequest("POST", "/api/v1/bookings", bytes.NewReader(body2))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Authorization", "Bearer "+tokenMhs)
+	// TIDAK ADA Idempotency-Key.
+	w2 := httptest.NewRecorder()
+	h.router.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusCreated {
+		t.Fatalf("booking kedua: status = %d, body = %s", w2.Code, w2.Body.String())
+	}
+	var resp2 map[string]string
+	json.Unmarshal(w2.Body.Bytes(), &resp2)
+	idB := resp2["id"]
+	if idB == "" || idB == idA {
+		t.Fatalf("booking kedua harus dapat id berbeda: idA=%s idB=%s", idA, idB)
+	}
+
+	// 4. Replay key K -> HARUS dapat id A.
+	req3 := httptest.NewRequest("POST", "/api/v1/bookings", bytes.NewReader(body))
+	req3.Header.Set("Content-Type", "application/json")
+	req3.Header.Set("Authorization", "Bearer "+tokenMhs)
+	req3.Header.Set("Idempotency-Key", key)
+	w3 := httptest.NewRecorder()
+	h.router.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusCreated {
+		t.Fatalf("replay: status = %d, body = %s", w3.Code, w3.Body.String())
+	}
+	if w3.Header().Get("Idempotency-Replayed") != "true" {
+		t.Errorf("replay tanpa header Idempotency-Replayed")
+	}
+	var resp3 map[string]string
+	json.Unmarshal(w3.Body.Bytes(), &resp3)
+	if resp3["id"] != idA {
+		t.Errorf("replay mengembalikan id = %s, mau %s (booking pertama, BUKAN yang terbaru %s)",
+			resp3["id"], idA, idB)
 	}
 }
 
@@ -567,10 +684,10 @@ func TestListBookings_MahasiswaHanyaLihatMiliknya(t *testing.T) {
 	slot1 := h.buatSlot(dosen, 24*time.Hour)
 	slot2 := h.buatSlot(dosen, 48*time.Hour)
 
-	_, _, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
 		SlotID: slot1, StudentID: mhs1ID, Topic: "Milik mhs1",
 	})
-	_, _, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
 		SlotID: slot2, StudentID: mhs2ID, Topic: "Milik mhs2",
 	})
 
@@ -615,10 +732,10 @@ func TestListBookings_DosenLihatDiSlotnya(t *testing.T) {
 	slot1 := h.buatSlot(dosen, 24*time.Hour)
 	slot2 := h.buatSlot(dosen, 48*time.Hour)
 
-	_, _, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
 		SlotID: slot1, StudentID: mhs1ID, Topic: "Bimbingan 1",
 	})
-	_, _, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	_, _ = booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
 		SlotID: slot2, StudentID: mhs2ID, Topic: "Bimbingan 2",
 	})
 
@@ -646,14 +763,14 @@ func TestGetBooking_MilikOrangLain(t *testing.T) {
 	_, tokenMhs2 := h.buatMahasiswa()
 	slot := h.buatSlot(dosen, 24*time.Hour)
 
-	b, _, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhs1ID, Topic: "Bimbingan",
 	})
 	if err != nil {
 		t.Fatalf("booking gagal: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/v1/bookings/"+b.ID, nil)
+	req := httptest.NewRequest("GET", "/api/v1/bookings/"+b.Booking.ID, nil)
 	req.Header.Set("Authorization", "Bearer "+tokenMhs2)
 	w := httptest.NewRecorder()
 	h.router.ServeHTTP(w, req)
@@ -669,14 +786,14 @@ func TestGetBooking_Success(t *testing.T) {
 	mhsID, tokenMhs := h.buatMahasiswa()
 	slot := h.buatSlot(dosen, 24*time.Hour)
 
-	b, _, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
+	b, err := booking.NewService(poolUji, 60).Create(context.Background(), booking.CreateInput{
 		SlotID: slot, StudentID: mhsID, Topic: "Bimbingan skripsi",
 	})
 	if err != nil {
 		t.Fatalf("booking gagal: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/v1/bookings/"+b.ID, nil)
+	req := httptest.NewRequest("GET", "/api/v1/bookings/"+b.Booking.ID, nil)
 	req.Header.Set("Authorization", "Bearer "+tokenMhs)
 	w := httptest.NewRecorder()
 	h.router.ServeHTTP(w, req)
@@ -687,8 +804,8 @@ func TestGetBooking_Success(t *testing.T) {
 
 	var resp map[string]any
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["id"] != b.ID {
-		t.Errorf("id = %v, mau %s", resp["id"], b.ID)
+	if resp["id"] != b.Booking.ID {
+		t.Errorf("id = %v, mau %s", resp["id"], b.Booking.ID)
 	}
 	if resp["topic"] != "Bimbingan skripsi" {
 		t.Errorf("topic = %v, mau 'Bimbingan skripsi'", resp["topic"])

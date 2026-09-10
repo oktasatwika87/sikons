@@ -164,26 +164,29 @@ func statusSlot(t *testing.T, slotID string) string {
 
 // ---------------------------------------------------------------- test dasar
 
-func TestCreate_SuksessaatSlotMasihOpen(t *testing.T) {
+func TestCreate_SuksesSaatSlotMasihOpen(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
 	slot := buatSlot(t, dosen, 72*time.Hour)
 
-	b, replay, err := NewService(poolUji, 60).Create(context.Background(), CreateInput{
+	result, err := NewService(poolUji, 60).Create(context.Background(), CreateInput{
 		SlotID: slot, StudentID: mhs[0], Topic: "Bimbingan skripsi",
 	})
 	if err != nil {
 		t.Fatalf("mau sukses, dapat error: %v", err)
 	}
-	if replay {
+	if result.Replay {
 		t.Error("replay = true, mau false")
 	}
-
-	if b.Status != "confirmed" {
-		t.Errorf("status = %q, mau confirmed", b.Status)
+	if result.Booking == nil {
+		t.Fatal("booking = nil")
 	}
-	if b.Topic != "Bimbingan skripsi" {
-		t.Errorf("topic = %q", b.Topic)
+
+	if result.Booking.Status != "confirmed" {
+		t.Errorf("status = %q, mau confirmed", result.Booking.Status)
+	}
+	if result.Booking.Topic != "Bimbingan skripsi" {
+		t.Errorf("topic = %q", result.Booking.Topic)
 	}
 	if got := statusSlot(t, slot); got != "booked" {
 		t.Errorf("status slot = %q, mau booked", got)
@@ -193,7 +196,7 @@ func TestCreate_SuksessaatSlotMasihOpen(t *testing.T) {
 func TestCreate_SlotTidakAda(t *testing.T) {
 	mhs := buatMahasiswa(t, 1)
 
-	_, _, err := NewService(poolUji, 60).Create(context.Background(), CreateInput{
+	_, err := NewService(poolUji, 60).Create(context.Background(), CreateInput{
 		SlotID:    "00000000-0000-0000-0000-000000000000",
 		StudentID: mhs[0], Topic: "x",
 	})
@@ -208,13 +211,13 @@ func TestCreate_SlotSudahDipesanOrangLain(t *testing.T) {
 	slot := buatSlot(t, dosen, 72*time.Hour)
 	svc := NewService(poolUji, 60)
 
-	_, _, err := svc.Create(context.Background(),
+	_, err := svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "duluan"})
 	if err != nil {
 		t.Fatalf("booking pertama gagal: %v", err)
 	}
 
-	_, _, err = svc.Create(context.Background(),
+	_, err = svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[1], Topic: "telat"})
 	if !errors.Is(err, ErrSlotAlreadyBooked) {
 		t.Fatalf("err = %v, mau ErrSlotAlreadyBooked", err)
@@ -232,7 +235,7 @@ func TestCreate_BatasTigaBookingAktif(t *testing.T) {
 
 	for i := 0; i < DefaultMaxActiveBookings; i++ {
 		slot := buatSlot(t, dosen, time.Duration(24+i)*time.Hour)
-		_, _, err := svc.Create(context.Background(),
+		_, err := svc.Create(context.Background(),
 			CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "x"})
 		if err != nil {
 			t.Fatalf("booking ke-%d gagal: %v", i+1, err)
@@ -240,7 +243,7 @@ func TestCreate_BatasTigaBookingAktif(t *testing.T) {
 	}
 
 	slot := buatSlot(t, dosen, 100*time.Hour)
-	_, _, err := svc.Create(context.Background(),
+	_, err := svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "kelebihan"})
 	if !errors.Is(err, ErrLimitReached) {
 		t.Fatalf("err = %v, mau ErrLimitReached", err)
@@ -266,7 +269,7 @@ func TestCreate_BookingLampauTidakMenghabiskanJatah(t *testing.T) {
 	}
 
 	slot := buatSlot(t, dosen, 48*time.Hour)
-	_, _, err := svc.Create(context.Background(),
+	_, err := svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "baru"})
 	if err != nil {
 		t.Fatalf("mau sukses, dapat: %v", err)
@@ -289,7 +292,7 @@ func TestCreate_SlotDitarik(t *testing.T) {
 	}
 
 	// Pesan — harus gagal dengan ErrSlotWithdrawn
-	_, _, err = svc.Create(context.Background(),
+	_, err = svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "coba"})
 	if !errors.Is(err, ErrSlotWithdrawn) {
 		t.Fatalf("err = %v, mau ErrSlotWithdrawn", err)
@@ -332,11 +335,11 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-mulai
-			b, _, err := svc.Create(ctx, CreateInput{
+			result, err := svc.Create(ctx, CreateInput{
 				SlotID: slot, StudentID: mhs[i], Topic: "rebutan",
 			})
-			if err == nil && b != nil {
-				ids[i] = b.ID
+			if err == nil && result != nil && result.Booking != nil {
+				ids[i] = result.Booking.ID
 			}
 			hasil[i] = err
 		}(i)
@@ -423,7 +426,7 @@ func TestCreate_SatuMahasiswaMenembakSepuluhSlotSekaligus(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-mulai
-			_, _, err := svc.Create(ctx, CreateInput{
+			_, err := svc.Create(ctx, CreateInput{
 				SlotID: slots[i], StudentID: mhs[0], Topic: "borong",
 			})
 			hasil[i] = err
@@ -479,52 +482,68 @@ func TestCreate_IdempotencyKeyKlaimBerhasil(t *testing.T) {
 	hash := ComputeRequestHash(slot, "Topik", "")
 
 	// Request pertama: klaim berhasil, booking dibuat.
-	b1, replay1, err1 := svc.Create(context.Background(), CreateInput{
+	r1, err1 := svc.Create(context.Background(), CreateInput{
 		SlotID: slot, StudentID: mhs[0], Topic: "Topik",
 		IdempotencyKey: key, RequestHash: hash,
 	})
 	if err1 != nil {
 		t.Fatalf("request pertama gagal: %v", err1)
 	}
-	if replay1 {
-		t.Error("replay1 = true, mau false")
+	if r1.Replay {
+		t.Error("r1.Replay = true, mau false")
 	}
-	if b1 == nil {
-		t.Fatal("b1 = nil")
+	if r1.Booking == nil {
+		t.Fatal("r1.Booking = nil")
 	}
 
 	// Request kedua: key sama, hash sama -> replay.
-	b2, replay2, err2 := svc.Create(context.Background(), CreateInput{
+	r2, err2 := svc.Create(context.Background(), CreateInput{
 		SlotID: slot, StudentID: mhs[0], Topic: "Topik",
 		IdempotencyKey: key, RequestHash: hash,
 	})
 	if err2 != nil {
 		t.Fatalf("request kedua gagal: %v", err2)
 	}
-	if !replay2 {
-		t.Error("replay2 = false, mau true")
+	if !r2.Replay {
+		t.Error("r2.Replay = false, mau true")
 	}
-	if b2 == nil {
-		t.Log("b2 = nil (replay, tidak ada booking baru)")
-	} else if b2.ID != b1.ID {
-		t.Errorf("booking id berbeda: %s vs %s", b2.ID, b1.ID)
+	if !bytesContains(r2.Body, []byte(r1.Booking.ID)) {
+		t.Errorf("body replay tidak berisi id booking pertama: %s", r2.Body)
 	}
 
 	// Request ketiga: key sama, hash berbeda -> ErrIdempotencyReused.
 	hash2 := ComputeRequestHash(slot, "Topik Lain", "")
-	_, replay3, err3 := svc.Create(context.Background(), CreateInput{
+	_, err3 := svc.Create(context.Background(), CreateInput{
 		SlotID: slot, StudentID: mhs[0], Topic: "Topik Lain",
 		IdempotencyKey: key, RequestHash: hash2,
 	})
 	if !errors.Is(err3, ErrIdempotencyReused) {
 		t.Fatalf("err3 = %v, mau ErrIdempotencyReused", err3)
 	}
-	if replay3 {
-		t.Error("replay3 = true, mau false")
-	}
 
 	// Hanya ada 1 booking.
 	if n := hitungBookingAktif(t, slot); n != 1 {
 		t.Errorf("booking = %d, mau 1", n)
 	}
+}
+
+// bytesContains adalah pembantu kecil — tanpa strings.Contains supaya test ini
+// tidak bergantung pada modul yang lebih berat.
+func bytesContains(haystack, needle []byte) bool {
+	if len(needle) == 0 {
+		return true
+	}
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		match := true
+		for j := range needle {
+			if haystack[i+j] != needle[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }

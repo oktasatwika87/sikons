@@ -22,24 +22,27 @@ const DefaultMaxActiveBookings = 3
 // 409 dan ErrSlotNotFound ke 404. Kalau pembedanya adalah string pesan, maka
 // memperbaiki typo di pesan error diam-diam mengubah status code API.
 var (
-	ErrSlotNotFound       = errors.New("slot tidak ditemukan")
-	ErrSlotAlreadyBooked  = errors.New("slot sudah dipesan")
+	ErrSlotNotFound      = errors.New("slot tidak ditemukan")
+	ErrSlotAlreadyBooked = errors.New("slot sudah dipesan")
 	ErrSlotWithdrawn     = errors.New("slot sudah tidak tersedia")
-	ErrStudentNotFound    = errors.New("mahasiswa tidak ditemukan atau tidak aktif")
-	ErrLimitReached       = errors.New("batas booking aktif tercapai")
+	ErrStudentNotFound   = errors.New("mahasiswa tidak ditemukan atau tidak aktif")
+	ErrLimitReached      = errors.New("batas booking aktif tercapai")
 	ErrSlotTooSoon       = errors.New("jarak tempuh booking terlalu pendek")
 	ErrIdempotencyReused = errors.New("idempotency key dipakai ulang dengan isi berbeda")
+	ErrBookingNotFound   = errors.New("booking tidak ditemukan")
 )
 
 type CreateInput struct {
-	SlotID           string
-	StudentID        string
-	Topic            string
-	Description      string
-	IdempotencyKey   string
-	RequestHash      string
+	SlotID         string
+	StudentID      string
+	Topic          string
+	Description    string
+	IdempotencyKey string
+	RequestHash    string
 }
 
+// Booking adalah representasi minimum satu baris di tabel bookings.
+// Untuk view lengkap (dengan info slot dan person), pakai BookingView.
 type Booking struct {
 	ID          string
 	SlotID      string
@@ -48,4 +51,36 @@ type Booking struct {
 	Description string
 	Status      string
 	CreatedAt   time.Time
+}
+
+// BookingView adalah join lengkap dari bookings + slots + users + lecturer_profiles.
+// Service mengembalikannya agar HTTP handler tidak perlu query sendiri — dengan
+// begitu package server tidak perlu tahu SQL apa pun.
+type BookingView struct {
+	ID          string    `json:"id"`
+	SlotID      string    `json:"slot_id"`
+	StudentID   string    `json:"student_id"`
+	LecturerID  string    `json:"lecturer_id"`
+	Topic       string    `json:"topic"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	SlotStart   time.Time `json:"slot_start_at"`
+	SlotEnd     time.Time `json:"slot_end_at"`
+
+	// Person — hanya salah satu yang terisi, tergantung peran pemanggil.
+	LecturerFullName   string
+	LecturerDepartment string
+	StudentFullName    string
+	StudentIdentity    string
+}
+
+// CreateResult adalah keluaran service.Create. Body berisi JSON yang SUDAH jadi
+// — siap ditulis ke ResponseWriter. Replay = true bila body berasal dari
+// idempotency_keys, false bila baru saja di-generate.
+type CreateResult struct {
+	Booking *Booking
+	Status  int
+	Body    []byte
+	Replay  bool
 }

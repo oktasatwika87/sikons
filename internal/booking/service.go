@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -33,47 +35,54 @@ func NewService(pool *pgxpool.Pool, minLeadMinutes int) *Service {
 	}
 }
 
+// MinLeadMinutes mengembalikan minimal menit sebelum slot yang dipakai service
+// saat memutuskan ErrSlotTooSoon. Handler HTTP membacanya untuk membuat pesan
+// error yang akurat tanpa hardcode angka.
+func (s *Service) MinLeadMinutes() int {
+	return s.minLeadMinutes
+}
+
 // Create memesan satu slot untuk satu mahasiswa.
 //
 // Urutan di dalam transaction TIDAK BOLEH diubah. Berikut alasannya:
 //
 // LANGKAH 0 (idempotency — SEBELUM kunci apapun):
-//   Klaim idempotency key SEBELUM kunci baris. Kalau diletakkan di akhir,
-//   request kembar sudah keburu kalah di kunci slot dan menerima
-//   ErrSlotAlreadyBooked — persis yang mau dicegah.
 //
-//   ON CONFLICT DO NOTHING terhadap transaksi kembar yang belum commit membuat
-//   Postgres MENUNGGU, bukan mengembalikan nol baris. Transaction yang menang
-//   commit duluan, transaction yang kalah bangun dari wait dan INSERT-nya
-//   mendapat constraint violation -> dapat nol baris -> masuk ke replay path.
-//   Ini yang menyerialkan request kembar tanpa perlu lock terpisah.
+//	Klaim idempotency key SEBELUM kunci baris. Kalau diletakkan di akhir,
+//	request kembar sudah keburu kalah di kunci slot dan menerima
+//	ErrSlotAlreadyBooked — persis yang mau dicegah.
 //
-//   Satu transaction: crash di tengah = rollback = key hilang = retry bersih.
-//   Pola dua fase (INSERT klaim, COMMIT, baru INSERT booking) meninggalkan
-//   klaim yatim kalau crash sebelum booking disimpan; dua transaction juga
-//   menambah latency dan kompleksitas reaper untuk klaim basi.
+//	ON CONFLICT DO NOTHING terhadap transaksi kembar yang belum commit membuat
+//	Postgres MENUNGGU, bukan mengembalikan nol baris. Transaction yang menang
+//	commit duluan, transaction yang kalah bangun dari wait dan INSERT-nya
+//	mendapat constraint violation -> dapat nol baris -> masuk ke replay path.
+//	Ini yang menyerialkan request kembar tanpa perlu lock terpisah.
+//
+//	Satu transaction: crash di tengah = rollback = key hilang = retry bersih.
+//	Pola dua fase (INSERT klaim, COMMIT, baru INSERT booking) meninggalkan
+//	klaim yatim kalau crash sebelum booking disimpan; dua transaction juga
+//	menambah latency dan kompleksitas reaper untuk klaim basi.
 //
 // LANGKAH 1 — kunci baris mahasiswa.
 // LANGKAH 2 — kunci baris slot.
 // LANGKAH 3 — hitung booking aktif.
 // LANGKAH 4 — simpan booking.
 // LANGKAH 5 — tandai slot booked.
-// LANGKAH 6 — tandai idempotency selesai.
+// LANGKAH 6 — tulis response_body ke idempotency_keys.
 //
 // Urutan 1 lalu 2 selalu sama untuk SEMUA pemanggil. Itulah yang mencegah
 // deadlock: deadlock terjadi kalau dua transaksi mengambil dua kunci yang sama
 // dalam urutan terbalik, dan di sini urutan terbalik tidak pernah mungkin.
-func (s *Service) Create(ctx context.Context, in CreateInput) (*Booking, bool /*replay*/, error) {
+func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, false, fmt.Errorf("memulai transaction: %w", err)
+		return nil, fmt.Errorf("memulai transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
 	// LANGKAH 0 — klaim idempotency key.
 	//
 	// Kalau key kosong, lewati seluruh mekanisme ini.
-	var replay bool
 	if in.IdempotencyKey != "" {
 		var keyAda bool
 		err = tx.QueryRow(ctx, `
@@ -84,42 +93,49 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Booking, bool /*
 			in.StudentID, in.IdempotencyKey, in.RequestHash,
 		).Scan(&keyAda)
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Key sudah ada. Cek apakah isinya sama.
+			// Key sudah ada. Cek apakah isinya sama dan sudah selesai.
 			var storedEndpoint, storedHash string
+			var statusCode *int
+			var responseBody []byte
 			err = tx.QueryRow(ctx, `
-				SELECT endpoint, request_hash
+				SELECT endpoint, request_hash, status_code, response_body::text::bytea
 				FROM idempotency_keys
 				WHERE user_id = $1::uuid AND key = $2`,
 				in.StudentID, in.IdempotencyKey,
-			).Scan(&storedEndpoint, &storedHash)
+			).Scan(&storedEndpoint, &storedHash, &statusCode, &responseBody)
 			if err != nil {
-				return nil, false, fmt.Errorf("membaca idempotency key: %w", err)
+				return nil, fmt.Errorf("membaca idempotency key: %w", err)
 			}
 			// endpoint harus sama — key yang sama tidak boleh dipakai di endpoint lain.
 			if storedEndpoint != "/api/v1/bookings" {
-				return nil, false, ErrIdempotencyReused
+				return nil, ErrIdempotencyReused
 			}
 			// request_hash berbeda = key dipakai ulang dengan isi berbeda.
 			if storedHash != in.RequestHash {
-				return nil, false, ErrIdempotencyReused
+				return nil, ErrIdempotencyReused
 			}
-			// Hash sama: ini replay. Ambil booking yang sudah ada dari database.
-			// Sumber kebenaran adalah tabel bookings, bukan response_body.
-			var bookingID string
-			err = tx.QueryRow(ctx, `
-				SELECT id::text FROM bookings
-				WHERE slot_id = $1::uuid AND student_id = $2::uuid
-				ORDER BY created_at DESC LIMIT 1`,
-				in.SlotID, in.StudentID,
-			).Scan(&bookingID)
-			if err != nil {
-				return nil, false, fmt.Errorf("booking tidak ditemukan untuk replay: %w", err)
+			// Belum selesai? Sama dengan hash cocok tapi completed_at masih NULL —
+			// artinya transaksi sebelumnya sedang berjalan atau rollback.
+			// Karena Postgres menunggu di INSERT ON CONFLICT, baris ini sebenarnya
+			// hanya muncul kalau transaksi sebelumnya sudah commit (kalau belum,
+			// kita masih menunggu di atas). Jadi kalau completed_at NULL di sini,
+			// itu anomali: catat dan laporkan supaya bisa diselidiki.
+			if statusCode == nil {
+				return nil, fmt.Errorf("idempotency key '%s' ada tapi belum selesai", in.IdempotencyKey)
 			}
-
-			// Buat objek Booking dengan ID yang sudah ada.
-			return &Booking{ID: bookingID}, true, nil
-		} else if err != nil {
-			return nil, false, fmt.Errorf("menklaim idempotency key: %w", err)
+			// Sumber kebenaran untuk replay adalah response_body yang tersimpan,
+			// BUKAN query ulang ke tabel bookings. Kalau mahasiswa pernah
+			// membatalkan lalu memesan lagi, query ulang akan mengembalikan
+			// booking yang SALAH.
+			return &CreateResult{
+				Booking: nil,
+				Status:  *statusCode,
+				Body:    responseBody,
+				Replay:  true,
+			}, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("menklaim idempotency key: %w", err)
 		}
 		// keyAda == true: klaim berhasil, lanjut ke langkah 1.
 	}
@@ -152,13 +168,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Booking, bool /*
 		in.StudentID,
 	).Scan(&studentOK)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, false, ErrStudentNotFound
+		return nil, ErrStudentNotFound
 	}
 	if !studentOK {
-		return nil, false, ErrStudentNotFound
+		return nil, ErrStudentNotFound
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("mengunci baris mahasiswa: %w", err)
+		return nil, fmt.Errorf("mengunci baris mahasiswa: %w", err)
 	}
 
 	// LANGKAH 2 — kunci baris slot.
@@ -181,19 +197,19 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Booking, bool /*
 		in.SlotID, s.minLeadMinutes,
 	).Scan(&status, &withdrawn, &tooSoon)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, false, ErrSlotNotFound
+		return nil, ErrSlotNotFound
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("mengunci baris slot: %w", err)
+		return nil, fmt.Errorf("mengunci baris slot: %w", err)
 	}
 	if withdrawn {
-		return nil, false, ErrSlotWithdrawn
+		return nil, ErrSlotWithdrawn
 	}
 	if tooSoon {
-		return nil, false, ErrSlotTooSoon
+		return nil, ErrSlotTooSoon
 	}
 	if status != "open" {
-		return nil, false, ErrSlotAlreadyBooked
+		return nil, ErrSlotAlreadyBooked
 	}
 
 	// LANGKAH 3 — hitung booking aktif milik mahasiswa ini.
@@ -211,10 +227,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Booking, bool /*
 		in.StudentID,
 	).Scan(&aktif)
 	if err != nil {
-		return nil, false, fmt.Errorf("menghitung booking aktif: %w", err)
+		return nil, fmt.Errorf("menghitung booking aktif: %w", err)
 	}
 	if aktif >= s.maxActive {
-		return nil, false, ErrLimitReached
+		return nil, ErrLimitReached
 	}
 
 	// LANGKAH 4 — simpan booking.
@@ -243,9 +259,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Booking, bool /*
 		if errors.As(err, &pgErr) &&
 			pgErr.Code == "23505" &&
 			pgErr.ConstraintName == "one_active_booking_per_slot" {
-			return nil, false, ErrSlotAlreadyBooked
+			return nil, ErrSlotAlreadyBooked
 		}
-		return nil, false, fmt.Errorf("menyimpan booking: %w", err)
+		return nil, fmt.Errorf("menyimpan booking: %w", err)
 	}
 
 	// LANGKAH 5 — tandai slotnya terpakai.
@@ -259,67 +275,134 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Booking, bool /*
 		in.SlotID,
 	)
 	if err != nil {
-		return nil, false, fmt.Errorf("menandai slot terpakai: %w", err)
+		return nil, fmt.Errorf("menandai slot terpakai: %w", err)
 	}
 	if ct.RowsAffected() != 1 {
-		return nil, false, fmt.Errorf("slot %s gagal ditandai terpakai: %d baris terdampak",
+		return nil, fmt.Errorf("slot %s gagal ditandai terpakai: %d baris terdampak",
 			in.SlotID, ct.RowsAffected())
 	}
 
-	// LANGKAH 6 — tandai idempotency selesai.
+	// LANGKAH 6 — tulis response_body ke idempotency_keys.
 	//
-	// completed_at selalu terisi pada baris yang terlihat transaksi lain,
-	// karena baris yang belum selesai belum di-commit.
+	// Body yang disimpan di sini adalah yang AKAN dikembalikan ke klien. Saat
+	// replay, body ini dibaca ulang apa adanya — itulah yang menjamin replay
+	// mengembalikan id booking yang PERTAMA, bukan id terbaru kalau mahasiswa
+	// sempat membatalkan dan memesan lagi.
+	body, err := json.Marshal(map[string]string{"id": b.ID})
+	if err != nil {
+		return nil, fmt.Errorf("menyusun response body: %w", err)
+	}
+
 	if in.IdempotencyKey != "" {
 		_, err = tx.Exec(ctx, `
 			UPDATE idempotency_keys
 			SET status_code = 201,
-			    response_body = jsonb_build_object('id', $1::text),
+			    response_body = $1::jsonb,
 			    completed_at = now()
 			WHERE user_id = $2::uuid AND key = $3`,
-			b.ID, in.StudentID, in.IdempotencyKey,
+			string(body), in.StudentID, in.IdempotencyKey,
 		)
 		if err != nil {
-			return nil, false, fmt.Errorf("menandai idempotency selesai: %w", err)
+			return nil, fmt.Errorf("menandai idempotency selesai: %w", err)
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return nil, false, fmt.Errorf("commit: %w", err)
+		return nil, fmt.Errorf("commit: %w", err)
 	}
 
-	return &b, replay, nil
+	return &CreateResult{
+		Booking: &b,
+		Status:  http.StatusCreated,
+		Body:    body,
+		Replay:  false,
+	}, nil
 }
 
-// GetByID mengambil satu booking.
-func (s *Service) GetByID(ctx context.Context, bookingID string) (*Booking, error) {
-	var b Booking
-	err := s.pool.QueryRow(ctx, `
-		SELECT id::text, slot_id::text, student_id::text,
-		       topic, coalesce(description, ''), status::text, created_at
-		FROM bookings WHERE id = $1::uuid`,
-		bookingID,
-	).Scan(&b.ID, &b.SlotID, &b.StudentID, &b.Topic, &b.Description, &b.Status, &b.CreatedAt)
+// GetByID mengambil satu booking. Kalau requester tidak punya akses (bukan
+// pemilik dan bukan dosen di slot itu), ErrBookingNotFound dikembalikan —
+// supaya kita tidak bocorin informasi "ada tapi bukan milikmu" lewat 403.
+//
+// viewRole menentukan field person mana yang diisi: "student" -> lecturer
+// fields, "lecturer" -> student fields. Role lain -> "" semua.
+func (s *Service) GetByID(ctx context.Context, bookingID, requesterID, requesterRole string) (*BookingView, error) {
+	view, err := s.loadBookingView(ctx, `WHERE b.id = $1::uuid`, bookingID)
+	if err != nil {
+		return nil, err
+	}
+
+	switch requesterRole {
+	case "student":
+		if view.StudentID != requesterID {
+			return nil, ErrBookingNotFound
+		}
+	case "lecturer":
+		if view.LecturerID != requesterID {
+			return nil, ErrBookingNotFound
+		}
+	}
+	return view, nil
+}
+
+// ListByStudent mengambil booking milik satu mahasiswa dengan pagination.
+func (s *Service) ListByStudent(ctx context.Context, studentID, status string, page, perPage int) ([]BookingView, int, error) {
+	return listBookingsView(ctx, s.pool, "student", studentID, status, page, perPage)
+}
+
+// ListByLecturer mengambil booking di slot milik satu dosen dengan pagination.
+func (s *Service) ListByLecturer(ctx context.Context, lecturerID, status string, page, perPage int) ([]BookingView, int, error) {
+	return listBookingsView(ctx, s.pool, "lecturer", lecturerID, status, page, perPage)
+}
+
+// loadBookingView menjalankan query join untuk satu booking. Dipakai oleh GetByID.
+// Kalau lebih dari satu view atau nol, mengembalikan ErrBookingNotFound.
+func (s *Service) loadBookingView(ctx context.Context, where string, args ...any) (*BookingView, error) {
+	q := `
+		SELECT b.id::text, b.slot_id::text, b.student_id::text,
+		       sl.lecturer_id::text,
+		       b.topic, coalesce(b.description, ''), b.status::text, b.created_at,
+		       sl.start_at, sl.end_at,
+		       u.full_name, coalesce(lp.department, '') AS department,
+		       '' AS student_full_name, '' AS student_identity
+		FROM bookings b
+		JOIN slots sl ON sl.id = b.slot_id
+		JOIN users u ON u.id = sl.lecturer_id
+		LEFT JOIN lecturer_profiles lp ON lp.user_id = u.id
+		` + where
+
+	var v BookingView
+	err := s.pool.QueryRow(ctx, q, args...).Scan(
+		&v.ID, &v.SlotID, &v.StudentID, &v.LecturerID,
+		&v.Topic, &v.Description, &v.Status, &v.CreatedAt,
+		&v.SlotStart, &v.SlotEnd,
+		&v.LecturerFullName, &v.LecturerDepartment,
+		&v.StudentFullName, &v.StudentIdentity,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrSlotNotFound
+		return nil, ErrBookingNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mengambil booking: %w", err)
 	}
-	return &b, nil
+
+	// Isi field student kalau tersedia (untuk view dosen).
+	if v.StudentID != "" {
+		var fullName, identity string
+		err := s.pool.QueryRow(ctx, `
+			SELECT full_name, coalesce(identity_number, '')
+			FROM users WHERE id = $1::uuid`, v.StudentID,
+		).Scan(&fullName, &identity)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("mengambil data mahasiswa: %w", err)
+		}
+		v.StudentFullName = fullName
+		v.StudentIdentity = identity
+	}
+
+	return &v, nil
 }
 
-// ListByStudent mengambil booking milik satu mahasiswa dengan pagination.
-func (s *Service) ListByStudent(ctx context.Context, studentID, status string, page, perPage int) ([]Booking, int, error) {
-	return listBookings(ctx, s.pool, "student", studentID, status, page, perPage)
-}
-
-// ListByLecturer mengambil booking di slot milik satu dosen dengan pagination.
-func (s *Service) ListByLecturer(ctx context.Context, lecturerID, status string, page, perPage int) ([]Booking, int, error) {
-	return listBookings(ctx, s.pool, "lecturer", lecturerID, status, page, perPage)
-}
-
-func listBookings(ctx context.Context, pool *pgxpool.Pool, role, userID, status string, page, perPage int) ([]Booking, int, error) {
+func listBookingsView(ctx context.Context, pool *pgxpool.Pool, role, userID, status string, page, perPage int) ([]BookingView, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -336,18 +419,19 @@ func listBookings(ctx context.Context, pool *pgxpool.Pool, role, userID, status 
 
 	// Bangun where clause berdasarkan peran.
 	var whereClause string
-	var orderBy string
 	switch role {
 	case "student":
 		args = append(args, userID)
 		argIdx = 2
 		whereClause = "b.student_id = $1"
-		orderBy = "b.created_at DESC"
 	case "lecturer":
 		args = append(args, userID)
 		argIdx = 2
 		whereClause = "sl.lecturer_id = $1"
-		orderBy = "sl.start_at DESC"
+	default:
+		// Role tidak dikenal — kembalikan empty list dengan total 0, BUKAN
+		// meloloskan whereClause kosong yang akan membaca SELURUH tabel.
+		return nil, 0, nil
 	}
 
 	if status != "" {
@@ -367,32 +451,97 @@ func listBookings(ctx context.Context, pool *pgxpool.Pool, role, userID, status 
 	args = append(args, perPage, offset)
 	rows, err := pool.Query(ctx, fmt.Sprintf(`
 		SELECT b.id::text, b.slot_id::text, b.student_id::text,
-		       b.topic, coalesce(b.description, ''), b.status::text, b.created_at
+		       sl.lecturer_id::text,
+		       b.topic, coalesce(b.description, ''), b.status::text, b.created_at,
+		       sl.start_at, sl.end_at,
+		       u.full_name, coalesce(lp.department, '') AS department,
+		       '' AS student_full_name, '' AS student_identity
 		FROM bookings b
 		JOIN slots sl ON sl.id = b.slot_id
+		JOIN users u ON u.id = sl.lecturer_id
+		LEFT JOIN lecturer_profiles lp ON lp.user_id = u.id
 		WHERE %s
-		ORDER BY %s
+		ORDER BY sl.start_at DESC
 		LIMIT $%d OFFSET $%d`,
-		whereClause, orderBy, argIdx, argIdx+1),
+		whereClause, argIdx, argIdx+1),
 		args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("mengambil booking: %w", err)
 	}
 	defer rows.Close()
 
-	var bookings []Booking
+	var bookings []BookingView
 	for rows.Next() {
-		var b Booking
-		if err := rows.Scan(&b.ID, &b.SlotID, &b.StudentID, &b.Topic, &b.Description, &b.Status, &b.CreatedAt); err != nil {
+		var v BookingView
+		if err := rows.Scan(
+			&v.ID, &v.SlotID, &v.StudentID, &v.LecturerID,
+			&v.Topic, &v.Description, &v.Status, &v.CreatedAt,
+			&v.SlotStart, &v.SlotEnd,
+			&v.LecturerFullName, &v.LecturerDepartment,
+			&v.StudentFullName, &v.StudentIdentity,
+		); err != nil {
 			return nil, 0, fmt.Errorf("membaca booking: %w", err)
 		}
-		bookings = append(bookings, b)
+		bookings = append(bookings, v)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("membaca hasil booking: %w", err)
 	}
 
+	// Untuk view list, hanya dosen yang butuh field student — dan query kedua
+	// di sini merugikan kalau pemanggilnya mahasiswa (yang tidak butuh).
+	// Saat ini hemat saja: kalau ada booking dan role adalah lecturer, isi
+	// field student dengan satu query batched.
+	if role == "lecturer" && len(bookings) > 0 {
+		studentIDs := make([]string, 0, len(bookings))
+		seen := make(map[string]bool, len(bookings))
+		for _, b := range bookings {
+			if !seen[b.StudentID] {
+				studentIDs = append(studentIDs, b.StudentID)
+				seen[b.StudentID] = true
+			}
+		}
+		students, err := loadStudents(ctx, pool, studentIDs)
+		if err != nil {
+			return nil, 0, err
+		}
+		for i := range bookings {
+			if s, ok := students[bookings[i].StudentID]; ok {
+				bookings[i].StudentFullName = s.FullName
+				bookings[i].StudentIdentity = s.Identity
+			}
+		}
+	}
+
 	return bookings, total, nil
+}
+
+type studentInfo struct {
+	FullName string
+	Identity string
+}
+
+func loadStudents(ctx context.Context, pool *pgxpool.Pool, ids []string) (map[string]studentInfo, error) {
+	if len(ids) == 0 {
+		return map[string]studentInfo{}, nil
+	}
+	rows, err := pool.Query(ctx, `
+		SELECT id::text, full_name, coalesce(identity_number, '')
+		FROM users WHERE id = ANY($1::uuid[])`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("mengambil data mahasiswa: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]studentInfo, len(ids))
+	for rows.Next() {
+		var id, name, identity string
+		if err := rows.Scan(&id, &name, &identity); err != nil {
+			return nil, fmt.Errorf("membaca data mahasiswa: %w", err)
+		}
+		out[id] = studentInfo{FullName: name, Identity: identity}
+	}
+	return out, rows.Err()
 }
 
 // ComputeRequestHash menghitung SHA-256 hex dari field request yang sudah
