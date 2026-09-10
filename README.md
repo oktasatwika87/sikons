@@ -28,6 +28,14 @@ make test        # semua test, termasuk 100 request paralel ke slot yang sama
 
 `make help` menampilkan semua perintah.
 
+## Frontend
+
+```bash
+cd web && npm install && npm run dev
+```
+
+Frontend Next.js 15 (App Router) di port 3000. API backend di 8080 sudah dikonfigurasi via `NEXT_PUBLIC_API_URL`.
+
 ## Status
 
 - [x] M1 — kerangka repo, Docker Compose, skema database
