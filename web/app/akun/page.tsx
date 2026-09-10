@@ -5,6 +5,7 @@ import { RequireAuth } from "@/components/auth/RequireAuth";
 import { useApiFetch } from "@/hooks/useApiFetch";
 import type { UserResponse } from "@/lib/api/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatJakartaLongDate } from "@/lib/date";
 
 function AkunContent() {
   const apiFetch = useApiFetch();
@@ -68,13 +69,7 @@ function AkunContent() {
             <span>{user.is_active ? "Aktif" : "Dinonaktifkan"}</span>
 
             <span className="text-muted-foreground">Bergabung</span>
-            <span>
-              {new Date(user.created_at).toLocaleDateString("id-ID", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
-            </span>
+            <span>{formatJakartaLongDate(user.created_at)}</span>
           </div>
         </CardContent>
       </Card>
