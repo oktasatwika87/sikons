@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/oktasatwika/sikons/internal/auth"
 	"github.com/oktasatwika/sikons/internal/config"
@@ -30,11 +30,11 @@ func newTestLogger() *testLogger {
 
 type testLogger struct{}
 
-func (l *testLogger) Debug(msg string, args ...any)  {}
+func (l *testLogger) Debug(msg string, args ...any) {}
 func (l *testLogger) Info(msg string, args ...any)  {}
 func (l *testLogger) Warn(msg string, args ...any)  {}
 func (l *testLogger) Error(msg string, args ...any) {}
-func (l *testLogger) With(args ...any) *testLogger { return l }
+func (l *testLogger) With(args ...any) *testLogger  { return l }
 
 func TestMain(m *testing.M) {
 	auth.SetBcryptCostUntukTest(bcrypt.MinCost)
