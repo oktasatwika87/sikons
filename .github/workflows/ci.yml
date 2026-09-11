@@ -110,14 +110,17 @@ jobs:
 
       - name: Install dependensi
         run: |
-          echo "=== env: ignore ==="
+          echo "=== env vars dengan ignore ==="
           env | grep -i ignore || echo "(clean)"
+          echo "=== npmrc ==="
+          cat ~/.npmrc 2>/dev/null || echo "(tidak ada)"
           echo "=== npm version ==="
           npm --version
-          echo "=== .npmrc global ==="
-          cat ~/.npmrc 2>/dev/null || echo "(tidak ada)"
+          echo "=== disk space ==="
+          df -h / | tail -1
           echo "=== npm ci ==="
-          npm ci --ignore-scripts=false
+          npm ci --loglevel=verbose 2>&1 | tail -50
+          echo "npm ci exit: $?"
 
       - name: Type check
         run: npx tsc --noEmit
