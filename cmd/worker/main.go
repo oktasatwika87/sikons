@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/oktasatwika/sikons/internal/config"
-	"github.com/oktasatwika/sikons/internal/db"
-	"github.com/oktasatwika/sikons/internal/notifier"
-	"github.com/oktasatwika/sikons/internal/reminder"
+	"github.com/oktasatwika87/sikons/internal/config"
+	"github.com/oktasatwika87/sikons/internal/db"
+	"github.com/oktasatwika87/sikons/internal/notifier"
+	"github.com/oktasatwika87/sikons/internal/reminder"
 )
 
 func main() {

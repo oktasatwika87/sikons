@@ -11,13 +11,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/availability"
-	"github.com/oktasatwika/sikons/internal/booking"
-	"github.com/oktasatwika/sikons/internal/config"
-	"github.com/oktasatwika/sikons/internal/db"
-	"github.com/oktasatwika/sikons/internal/server"
-	"github.com/oktasatwika/sikons/internal/slotgen"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/availability"
+	"github.com/oktasatwika87/sikons/internal/booking"
+	"github.com/oktasatwika87/sikons/internal/config"
+	"github.com/oktasatwika87/sikons/internal/db"
+	"github.com/oktasatwika87/sikons/internal/server"
+	"github.com/oktasatwika87/sikons/internal/slotgen"
 )
 
 func main() {

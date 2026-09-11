@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/oktasatwika/sikons/internal/slotgen"
+	"github.com/oktasatwika87/sikons/internal/slotgen"
 )
 
 // Test di file ini adalah INTEGRATION TEST: butuh Postgres sungguhan.

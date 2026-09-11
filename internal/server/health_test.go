@@ -10,7 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/oktasatwika/sikons/internal/config"
+	"github.com/oktasatwika87/sikons/internal/config"
 )
 
 // dbPalsu memenuhi interface DB. Tidak ada library mocking, tidak ada code

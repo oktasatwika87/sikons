@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/httpx"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/httpx"
 )
 
 // ---------------------------------------------------------------- response types

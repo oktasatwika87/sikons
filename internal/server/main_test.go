@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/config"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/config"
 )
 
 // TestMain di package ini:
