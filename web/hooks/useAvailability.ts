@@ -38,7 +38,7 @@ export function useCreateAvailabilityRule() {
     mutationFn: (body) =>
       fetchWithRetry<RuleWithSlots>("/availability-rules", {
         method: "POST",
-        body,
+        body: JSON.stringify(body),
       }),
     onSuccess: () => {
       invalidateAvailability(queryClient);
@@ -60,7 +60,7 @@ export function useUpdateAvailabilityRule() {
     mutationFn: ({ id, body }) =>
       fetchWithRetry<{ slots: SlotReconcileSummary }>(
         `/availability-rules/${id}`,
-        { method: "PATCH", body }
+        { method: "PATCH", body: JSON.stringify(body) }
       ),
     onSuccess: () => {
       invalidateAvailability(queryClient);
@@ -98,7 +98,7 @@ export function useCreateAvailabilityException() {
     mutationFn: (body) =>
       fetchWithRetry<ExceptionWithSlots>("/availability-exceptions", {
         method: "POST",
-        body,
+        body: JSON.stringify(body),
       }),
     onSuccess: () => {
       invalidateAvailability(queryClient);
