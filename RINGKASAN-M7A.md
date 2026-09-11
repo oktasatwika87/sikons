@@ -427,6 +427,38 @@ packages (fsevents, msw, unrs-resolver) aman di Linux runner — tidak error.
 
 **CI Run #4** (`7375530`, commit fix):
 - Hapus `--ignore-scripts` dari `npm ci`, kembalikan repo integrity ke clean.
+- Hasil: backend ✅, repo-integrity ❌, frontend ❌.
+
+**CI Run #5** (`34582579011`, npm ci polos tanpa flag):
+- `npm ci` (tanpa `--ignore-scripts`) → tetap **GAGAL** di "Install dependensi".
+- Repo integrity: ❌ step "Periksa file perkakas eksternal" (lagi).
+
+**CI Run #6** (`34582666275`, debug repo integrity):
+- Repo integrity gagal LAGI. Debug output tidak bisa dibaca tanpa auth.
+- Kemungkinan: runner punya state git yang berbeda dari lokal.
+- Frontend: ❌
+
+**Root cause Frontend:**
+`npm ci` gagal KONSISTEN di runner GitHub Actions Linux di SEMUA kombinasi:
+- `npm ci --ignore-scripts`: FAIL
+- `npm ci` polos: FAIL
+- `npm ci --ignore-scripts=false`: FAIL
+- `npm ci` tanpa npm cache: FAIL
+- `npm_config_ignore_scripts=false` di env: FAIL
+
+Lokal: `npm ci --ignore-scripts=false` → **PASS** (735 packages).
+Hipotesa runner: npm registry unreachable, disk penuh, atau env var persist.
+
+**Root cause Repo integrity:**
+Step "Periksa file perkakas eksternal" gagal KONSISTEN di runner (bukan transient).
+Kemungkinan penyebab:
+1. runner punya git config atau index berbeda dari lokal
+2. pipe exit code behaviour berbeda di runner bash
+3. file system encoding berbeda
+
+**CI Run #7+** (sedang debugging):
+- Repo integrity: ganti grep dengan perl untuk menghindari pipe exit code issue.
+- Frontend: verbose logging + disk space check + npmrc check untuk diagnostic.
 - _(Hasil akan diisi setelah run selesai.)_
 
 ## Keputusan teknis
