@@ -20,12 +20,14 @@ func TestHitungSlot_TepatEnam(t *testing.T) {
 	}
 
 	now := time.Now()
-	daysUntilMonday := (8 - int(now.Weekday())) % 7
+	// Konversi ke zona kampus dulu agar nextMonday dan futureNow konsisten
+	nowLocal := now.In(campusTZ)
+	daysUntilMonday := (8 - int(nowLocal.Weekday())) % 7
 	if daysUntilMonday == 0 {
 		daysUntilMonday = 7
 	}
-	nextMonday := now.AddDate(0, 0, daysUntilMonday)
-	monday := time.Date(nextMonday.Year(), nextMonday.Month(), nextMonday.Day(), 0, 0, 0, 0, campusTZ)
+	// nextMonday = tengah malam Senin berikutnya dalam zona kampus
+	monday := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ).AddDate(0, 0, daysUntilMonday)
 
 	from := monday
 	to := monday
@@ -41,8 +43,8 @@ func TestHitungSlot_TepatEnam(t *testing.T) {
 		},
 	}
 
-	// now = sedikit sebelum Senin berikutnya, supaya slot tidak dianggap masa lalu
-	futureNow := nextMonday.Add(-1 * time.Hour)
+	// now = 1 jam sebelum Senin berikutnya (dalam zona kampus), supaya slot tidak dianggap masa lalu
+	futureNow := monday.Add(-1 * time.Hour)
 	slots := svc.computeShouldExist(from, to, rules, nil, futureNow.UTC())
 
 	if len(slots) != 6 {
@@ -78,12 +80,14 @@ func TestHitungSlot_JendelaTakPenuh(t *testing.T) {
 	}
 
 	now := time.Now()
-	daysUntilMonday := (8 - int(now.Weekday())) % 7
+	// Konversi ke zona kampus dulu agar nextMonday dan futureNow konsisten
+	nowLocal := now.In(campusTZ)
+	daysUntilMonday := (8 - int(nowLocal.Weekday())) % 7
 	if daysUntilMonday == 0 {
 		daysUntilMonday = 7
 	}
-	nextMonday := now.AddDate(0, 0, daysUntilMonday)
-	monday := time.Date(nextMonday.Year(), nextMonday.Month(), nextMonday.Day(), 0, 0, 0, 0, campusTZ)
+	// nextMonday = tengah malam Senin berikutnya dalam zona kampus
+	monday := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ).AddDate(0, 0, daysUntilMonday)
 	from := monday
 	to := monday
 
@@ -98,7 +102,8 @@ func TestHitungSlot_JendelaTakPenuh(t *testing.T) {
 		},
 	}
 
-	futureNow := nextMonday.Add(-1 * time.Hour)
+	// now = 1 jam sebelum Senin berikutnya (dalam zona kampus)
+	futureNow := monday.Add(-1 * time.Hour)
 	slots := svc.computeShouldExist(from, to, rules, nil, futureNow.UTC())
 
 	if len(slots) != 2 {
@@ -119,12 +124,14 @@ func TestHitungSlot_PengecualianFullDay(t *testing.T) {
 	}
 
 	now := time.Now()
-	daysUntilMonday := (8 - int(now.Weekday())) % 7
+	// Konversi ke zona kampus dulu agar nextMonday dan futureNow konsisten
+	nowLocal := now.In(campusTZ)
+	daysUntilMonday := (8 - int(nowLocal.Weekday())) % 7
 	if daysUntilMonday == 0 {
 		daysUntilMonday = 7
 	}
-	nextMonday := now.AddDate(0, 0, daysUntilMonday)
-	monday := time.Date(nextMonday.Year(), nextMonday.Month(), nextMonday.Day(), 0, 0, 0, 0, campusTZ)
+	// nextMonday = tengah malam Senin berikutnya dalam zona kampus
+	monday := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ).AddDate(0, 0, daysUntilMonday)
 	from := monday
 	to := monday
 
@@ -147,8 +154,8 @@ func TestHitungSlot_PengecualianFullDay(t *testing.T) {
 		},
 	}
 
-	// now = 1 jam sebelum Senin berikutnya (slot belum lewat)
-	futureNow := nextMonday.Add(-1 * time.Hour).UTC()
+	// now = 1 jam sebelum Senin berikutnya (dalam zona kampus)
+	futureNow := monday.Add(-1 * time.Hour).UTC()
 	slots := svc.computeShouldExist(from, to, rules, exceptions, futureNow)
 
 	if len(slots) != 0 {
@@ -170,15 +177,17 @@ func TestHitungSlot_PengecualianParsial(t *testing.T) {
 	}
 
 	now := time.Now()
-	daysUntilMonday := (8 - int(now.Weekday())) % 7
+	// Konversi ke zona kampus dulu agar nextMonday dan futureNow konsisten
+	nowLocal := now.In(campusTZ)
+	daysUntilMonday := (8 - int(nowLocal.Weekday())) % 7
 	if daysUntilMonday == 0 {
 		daysUntilMonday = 7
 	}
-	nextMonday := now.AddDate(0, 0, daysUntilMonday)
-	monday := time.Date(nextMonday.Year(), nextMonday.Month(), nextMonday.Day(), 0, 0, 0, 0, campusTZ)
+	// nextMonday = tengah malam Senin berikutnya dalam zona kampus
+	monday := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ).AddDate(0, 0, daysUntilMonday)
 
-	// now = 1 jam sebelum Senin berikutnya (slot belum lewat)
-	futureNow := nextMonday.Add(-1 * time.Hour).UTC()
+	// now = 1 jam sebelum Senin berikutnya (dalam zona kampus)
+	futureNow := monday.Add(-1 * time.Hour).UTC()
 
 	from := monday
 	to := monday
@@ -308,9 +317,11 @@ func TestHitungSlot_TakAdaSlotMasaLampau(t *testing.T) {
 		horizonDays: 30,
 	}
 
-	// Tanggal kemarin jam 12 siang (pasti sebelum semua slot 09:00-12:00)
-	yesterday := time.Now().AddDate(0, 0, -1).Add(12 * time.Hour)
-	monday := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 0, 0, 0, 0, campusTZ)
+	// yesterday = kemarin jam 12 siang dalam zona kampus (WIB)
+	// Konversi ke zona kampus dulu untuk konsistensi
+	nowLocal := time.Now().In(campusTZ)
+	yesterdayNoonLocal := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 12, 0, 0, 0, campusTZ).AddDate(0, 0, -1)
+	monday := time.Date(yesterdayNoonLocal.Year(), yesterdayNoonLocal.Month(), yesterdayNoonLocal.Day(), 0, 0, 0, 0, campusTZ)
 
 	from := monday
 	to := monday
@@ -326,7 +337,7 @@ func TestHitungSlot_TakAdaSlotMasaLampau(t *testing.T) {
 		},
 	}
 
-	slots := svc.computeShouldExist(from, to, rules, nil, yesterday.UTC())
+	slots := svc.computeShouldExist(from, to, rules, nil, yesterdayNoonLocal.UTC())
 
 	if len(slots) != 0 {
 		t.Fatalf("jumlah slot = %d, mau 0 (semuanya di masa lalu)", len(slots))
@@ -497,12 +508,14 @@ func TestHitungSlot_DuaMinggu(t *testing.T) {
 	}
 
 	now := time.Now()
-	daysUntilMonday := (8 - int(now.Weekday())) % 7
+	// Konversi ke zona kampus dulu agar nextMonday dan futureNow konsisten
+	nowLocal := now.In(campusTZ)
+	daysUntilMonday := (8 - int(nowLocal.Weekday())) % 7
 	if daysUntilMonday == 0 {
 		daysUntilMonday = 7
 	}
-	nextMonday := now.AddDate(0, 0, daysUntilMonday)
-	monday1 := time.Date(nextMonday.Year(), nextMonday.Month(), nextMonday.Day(), 0, 0, 0, 0, campusTZ)
+	// monday1 = tengah malam Senin berikutnya dalam zona kampus
+	monday1 := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ).AddDate(0, 0, daysUntilMonday)
 	monday2 := monday1.AddDate(0, 0, 7)
 
 	from := monday1

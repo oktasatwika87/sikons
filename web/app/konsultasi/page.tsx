@@ -247,8 +247,8 @@ function KonsultasiCard({ booking, isStudent, onCancel }: KonsultasiCardProps) {
             {booking.description}
           </p>
         )}
-        {/* Catatan dosen untuk baris completed */}
-        {booking.lecturer_note && (
+        {/* Catatan dosen untuk baris completed — hanya untuk dosen */}
+        {!isStudent && booking.lecturer_note && (
           <p className="mt-2 text-sm italic text-muted-foreground border-t pt-2">
             Catatan: {booking.lecturer_note}
           </p>
