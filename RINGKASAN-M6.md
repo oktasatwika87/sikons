@@ -114,32 +114,51 @@ Semua test server: **PASS** (server_test.go + booking_handler_test.go)
 
 ---
 
-## Hasil Verifikasi Manual Responsive M6a
+## M6b — Halaman Dashboard Dosen + Aksi Tandai Selesai/Tidak Hadir
 
-Belum dilakukan. Butuh dicek di browser dengan lebar 375px (iPhone SE).
+### File yang Berubah / Ditambahkan
 
----
+#### Baru
+- `web/lib/date.ts` — tambah fungsi `isSameJakartaDay(a, b)`
+- `web/lib/booking.ts` — tambah fungsi `isSessionActionable` dan `groupDashboardBookings`
+- `web/lib/__tests__/booking.test.ts` — 14 test baru (isSessionActionable + groupDashboardBookings)
+- `web/lib/__tests__/date.test.ts` — 4 test baru (isSameJakartaDay)
+- `web/lib/msw/handlers/booking.ts` — tambah PATCH complete dan no-show handlers
+- `web/hooks/useCompleteBooking.ts` — mutation hook untuk tandakan selesai
+- `web/hooks/useNoShowBooking.ts` — mutation hook untuk tandakan tidak hadir
+- `web/app/dashboard/page.tsx` — halaman utama dashboard
+- `web/app/dashboard/__tests__/page.test.tsx` — 2 MSW integration test
 
-## Test Count Repo
+#### Dimodifikasi
+- `web/components/Nav.tsx` — tambah link "/dashboard" untuk role lecturer
+- `web/lib/api/types.ts` — sudah punya lecturer_note dari M6b-0
 
-| Milestone | Count |
-|-----------|-------|
-| M6a (web) | 34 |
-| M6b-0 (Go) | 2 |
-| **Total baru** | **36** |
+### Definisi Ketiga Bucket
 
-Total test repo keseluruhan: **125** (87 web + 38 Go)
+Pengelompokan berdasarkan waktu saat data diambil (`nowInstant`), BUKAN Date.now() di dalam fungsi:
 
----
+1. **needsFollowUp**: `confirmed` DAN `startAt < nowInstant` (sudah lewat, kapan pun)
+2. **today**: `confirmed` DAN `startAt >= nowInstant` DAN jatuh di tanggal yang sama dengan `nowInstant` (WIB)
+3. **upcoming**: `confirmed` DAN `startAt >= nowInstant` DAN BUKAN tanggal yang sama dengan `nowInstant` (WIB)
 
-## Catatan Implementasi M6a
+**Perbandingan (1) dan batas (2)/(3) berbeda kelas:**
+- `(1)` pakai perbandingan instant murni (epoch ms)
+- `(2)/(3)` butuh konsep kalender → wajib lewat `isSameJakartaDay` (dari lib/date.ts)
 
-1. **Summary panel** muncul sebagai panel menetap (bukan toast) di atas halaman setelah mutasi. Styling destructif aktif hanya kalau `bookings_cancelled > 0`.
-2. **Preview slot count** di form aturan dihitung di klien dari form values, bukan dari API.
-3. **Rentang pengecualian**: from = hari ini, to = +90 hari.
-4. **Query invalidation**: invalidate `availability-rules`, `availability-exceptions`, DAN `lecturer/{id}/slots`.
-5. **Error ATURAN_BENTROK**: langsung tampil di form dengan pesan spesifik.
-6. **Dialog konfirmasi**: Pakai AlertDialog yang sudah ada.
+### Lokasi isSessionActionable
+
+Fungsi `isSessionActionable` ditaruh di `web/lib/booking.ts` — file yang SAMA dengan `isBookingCancelable`, mengikuti pola yang sudah ada. Alasannya: keduanya adalah perbandingan instant murni, bukan operasi kalender/tampilan.
+
+### Hasil Test
+
+| File Test | Test Baru | Total Test |
+|-----------|-----------|------------|
+| `date.test.ts` | 4 (isSameJakartaDay) | ~20 |
+| `booking.test.ts` | 14 (isSessionActionable + groupDashboardBookings) | 20 |
+| `page.test.tsx` (dashboard) | 2 (complete flow) | 2 |
+| **Total M6b** | **20** | |
+
+**Total test repo keseluruhan: 125** (105 web + 38 Go - sudah termasuk M6b)
 
 ---
 

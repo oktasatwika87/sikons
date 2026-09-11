@@ -178,4 +178,72 @@ export const bookingHandlers = [
 
     return HttpResponse.json(cancelledBooking);
   }),
+
+  // PATCH /api/v1/bookings/:id/complete — tandai selesai
+  http.patch(`${BASE_URL}/bookings/:id/complete`, async ({ params, request }) => {
+    const id = params.id as string;
+    const booking = store.bookings.get(id) as { status: string; slot?: { start_at: string }; [key: string]: unknown } | undefined;
+
+    if (!booking) {
+      return HttpResponse.json(
+        { error: { code: "BOOKING_NOT_FOUND", message: "Booking tidak ditemukan" } },
+        { status: 404 }
+      );
+    }
+
+    if (booking.status !== "confirmed") {
+      return HttpResponse.json(
+        { error: { code: "BOOKING_NOT_CONFIRMED", message: "Booking tidak berstatus confirmed" } },
+        { status: 409 }
+      );
+    }
+
+    // Cek apakah sesi sudah dimulai (SESSION_NOT_STARTED kalau sekarang < start_at)
+    if (booking.slot && new Date() < new Date(booking.slot.start_at)) {
+      return HttpResponse.json(
+        { error: { code: "SESSION_NOT_STARTED", message: "Sesi belum dimulai" } },
+        { status: 422 }
+      );
+    }
+
+    const body = (await request.json().catch(() => ({}))) as { lecturer_note?: string };
+    const completedBooking = {
+      ...booking,
+      status: "completed",
+      completed_at: new Date().toISOString(),
+      lecturer_note: body.lecturer_note ?? null,
+    };
+    store.bookings.set(id, completedBooking);
+
+    return HttpResponse.json(completedBooking);
+  }),
+
+  // PATCH /api/v1/bookings/:id/no-show — tandai tidak hadir
+  http.patch(`${BASE_URL}/bookings/:id/no-show`, async ({ params }) => {
+    const id = params.id as string;
+    const booking = store.bookings.get(id) as { status: string; [key: string]: unknown } | undefined;
+
+    if (!booking) {
+      return HttpResponse.json(
+        { error: { code: "BOOKING_NOT_FOUND", message: "Booking tidak ditemukan" } },
+        { status: 404 }
+      );
+    }
+
+    if (booking.status !== "confirmed") {
+      return HttpResponse.json(
+        { error: { code: "BOOKING_NOT_CONFIRMED", message: "Booking tidak berstatus confirmed" } },
+        { status: 409 }
+      );
+    }
+
+    const noShowBooking = {
+      ...booking,
+      status: "no_show",
+      marked_at: new Date().toISOString(),
+    };
+    store.bookings.set(id, noShowBooking);
+
+    return HttpResponse.json(noShowBooking);
+  }),
 ];

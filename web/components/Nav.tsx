@@ -37,9 +37,14 @@ export function Nav() {
                 Booking Saya
               </Link>
               {auth.user.role === "lecturer" && (
-                <Link href="/ketersediaan" className="text-sm hover:underline">
-                  Ketersediaan
-                </Link>
+                <>
+                  <Link href="/ketersediaan" className="text-sm hover:underline">
+                    Ketersediaan
+                  </Link>
+                  <Link href="/dashboard" className="text-sm hover:underline">
+                    Dashboard
+                  </Link>
+                </>
               )}
               <Link href="/akun">
                 <Button variant="ghost" size="sm">
