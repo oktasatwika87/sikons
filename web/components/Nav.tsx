@@ -33,6 +33,9 @@ export function Nav() {
               <span className="text-sm text-muted-foreground">
                 {auth.user.full_name}
               </span>
+              <Link href="/booking-saya" className="text-sm hover:underline">
+                Booking Saya
+              </Link>
               <Link href="/akun">
                 <Button variant="ghost" size="sm">
                   Akun
