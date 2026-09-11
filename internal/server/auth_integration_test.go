@@ -18,10 +18,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/availability"
-	"github.com/oktasatwika/sikons/internal/config"
-	"github.com/oktasatwika/sikons/internal/slotgen"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/availability"
+	"github.com/oktasatwika87/sikons/internal/config"
+	"github.com/oktasatwika87/sikons/internal/slotgen"
 )
 
 // Test di file ini butuh Postgres sungguhan. Kalau TEST_DATABASE_URL kosong,

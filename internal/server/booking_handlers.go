@@ -11,9 +11,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/booking"
-	"github.com/oktasatwika/sikons/internal/httpx"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/booking"
+	"github.com/oktasatwika87/sikons/internal/httpx"
 )
 
 // ---------------------------------------------------------------- request/response DTO

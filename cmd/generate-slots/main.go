@@ -9,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/oktasatwika/sikons/internal/config"
-	"github.com/oktasatwika/sikons/internal/db"
-	"github.com/oktasatwika/sikons/internal/slotgen"
+	"github.com/oktasatwika87/sikons/internal/config"
+	"github.com/oktasatwika87/sikons/internal/db"
+	"github.com/oktasatwika87/sikons/internal/slotgen"
 )
 
 func main() {

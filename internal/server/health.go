@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/oktasatwika/sikons/internal/httpx"
+	"github.com/oktasatwika87/sikons/internal/httpx"
 )
 
 // handleHealthz menjawab pertanyaan "proses ini masih hidup?".

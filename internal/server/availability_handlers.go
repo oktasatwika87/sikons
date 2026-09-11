@@ -9,10 +9,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/availability"
-	"github.com/oktasatwika/sikons/internal/httpx"
-	"github.com/oktasatwika/sikons/internal/slotgen"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/availability"
+	"github.com/oktasatwika87/sikons/internal/httpx"
+	"github.com/oktasatwika87/sikons/internal/slotgen"
 )
 
 // ---------------------------------------------------------------- availability rules

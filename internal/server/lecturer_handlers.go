@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/oktasatwika/sikons/internal/httpx"
-	"github.com/oktasatwika/sikons/internal/lecturer"
+	"github.com/oktasatwika87/sikons/internal/httpx"
+	"github.com/oktasatwika87/sikons/internal/lecturer"
 )
 
 // handleListLecturers menampilkan daftar dosen.

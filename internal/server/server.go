@@ -11,12 +11,12 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/availability"
-	"github.com/oktasatwika/sikons/internal/booking"
-	"github.com/oktasatwika/sikons/internal/config"
-	"github.com/oktasatwika/sikons/internal/lecturer"
-	"github.com/oktasatwika/sikons/internal/slotgen"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/availability"
+	"github.com/oktasatwika87/sikons/internal/booking"
+	"github.com/oktasatwika87/sikons/internal/config"
+	"github.com/oktasatwika87/sikons/internal/lecturer"
+	"github.com/oktasatwika87/sikons/internal/slotgen"
 )
 
 // Server memegang semua dependency handler. Ini pola dependency injection

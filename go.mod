@@ -1,4 +1,4 @@
-module github.com/oktasatwika/sikons
+module github.com/oktasatwika87/sikons
 
 go 1.27
 

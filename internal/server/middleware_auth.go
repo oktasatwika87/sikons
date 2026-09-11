@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/httpx"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/httpx"
 )
 
 // requireAuth membaca access token dari header Authorization dan menaruh

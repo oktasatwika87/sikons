@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/oktasatwika/sikons/internal/notifier"
+	"github.com/oktasatwika87/sikons/internal/notifier"
 )
 
 // Service worker untuk mengirim reminder email.

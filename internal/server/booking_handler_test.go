@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/booking"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/booking"
 )
 
 // bookingTestHelper menyediakan helper untuk test booking handler.

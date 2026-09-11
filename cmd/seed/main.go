@@ -10,8 +10,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/db"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/db"
 )
 
 // Ambil DATABASE_URL langsung dari env, tidak lewat config.Load() yang juga

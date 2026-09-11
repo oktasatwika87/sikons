@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oktasatwika/sikons/internal/auth"
-	"github.com/oktasatwika/sikons/internal/lecturer"
+	"github.com/oktasatwika87/sikons/internal/auth"
+	"github.com/oktasatwika87/sikons/internal/lecturer"
 )
 
 func buatServerUjiLecturer(t *testing.T) *lecturerTestHelper {
