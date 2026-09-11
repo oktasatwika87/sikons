@@ -129,11 +129,11 @@ export function BookingDialog({
                 {error.type === "limit" && (
                   <div className="mt-2">
                     <Link
-                      href="/booking-saya"
+                      href="/konsultasi"
                       className="underline underline-offset-2"
                       onClick={() => handleOpenChange(false)}
                     >
-                      Lihat Booking Saya
+                      Lihat Riwayat Konsultasi
                     </Link>
                   </div>
                 )}

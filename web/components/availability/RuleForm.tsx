@@ -100,7 +100,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
           id="day_of_week"
           value={form.day_of_week}
           onChange={(e) => handleChange("day_of_week", parseInt(e.target.value))}
-          className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm min-h-[44px]"
         >
           {DAY_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -110,8 +110,8 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
         </select>
       </div>
 
-      {/* Jam mulai & selesai */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Jam mulai & selesai — satu kolom di mobile */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="start_time">Jam Mulai</Label>
           <Input
@@ -119,7 +119,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
             type="time"
             value={form.start_time}
             onChange={(e) => handleChange("start_time", e.target.value)}
-            className={errors.start_time ? "border-destructive" : ""}
+            className={`mt-1 min-h-[44px] ${errors.start_time ? "border-destructive" : ""}`}
           />
           {errors.start_time && (
             <p className="mt-1 text-xs text-destructive">{errors.start_time}</p>
@@ -132,7 +132,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
             type="time"
             value={form.end_time}
             onChange={(e) => handleChange("end_time", e.target.value)}
-            className={errors.end_time ? "border-destructive" : ""}
+            className={`mt-1 min-h-[44px] ${errors.end_time ? "border-destructive" : ""}`}
           />
           {errors.end_time && (
             <p className="mt-1 text-xs text-destructive">{errors.end_time}</p>
@@ -150,7 +150,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
           max={180}
           value={form.slot_duration_min}
           onChange={(e) => handleChange("slot_duration_min", parseInt(e.target.value))}
-          className={errors.slot_duration_min ? "border-destructive" : ""}
+          className={`mt-1 min-h-[44px] ${errors.slot_duration_min ? "border-destructive" : ""}`}
         />
         {errors.slot_duration_min && (
           <p className="mt-1 text-xs text-destructive">{errors.slot_duration_min}</p>
@@ -171,8 +171,8 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
         </p>
       )}
 
-      {/* Tanggal berlaku */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Tanggal berlaku — satu kolom di mobile */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="effective_from">Berlaku Dari</Label>
           <Input
@@ -180,7 +180,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
             type="date"
             value={form.effective_from}
             onChange={(e) => handleChange("effective_from", e.target.value)}
-            className={errors.effective_from ? "border-destructive" : ""}
+            className={`mt-1 min-h-[44px] ${errors.effective_from ? "border-destructive" : ""}`}
           />
           {errors.effective_from && (
             <p className="mt-1 text-xs text-destructive">{errors.effective_from}</p>
@@ -195,7 +195,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
             onChange={(e) =>
               handleChange("effective_to", e.target.value || undefined)
             }
-            className={errors.effective_to ? "border-destructive" : ""}
+            className={`mt-1 min-h-[44px] ${errors.effective_to ? "border-destructive" : ""}`}
           />
           {errors.effective_to && (
             <p className="mt-1 text-xs text-destructive">{errors.effective_to}</p>
@@ -204,11 +204,16 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
       </div>
 
       {/* Action buttons */}
-      <div className="flex justify-end gap-3 pt-2">
-        <Button variant="outline" onClick={onCancel} type="button">
+      <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-end">
+        <Button
+          variant="outline"
+          onClick={onCancel}
+          type="button"
+          className="min-h-[44px]"
+        >
           Batal
         </Button>
-        <Button type="submit" disabled={createMutation.isPending}>
+        <Button type="submit" disabled={createMutation.isPending} className="min-h-[44px]">
           {createMutation.isPending ? "Menyimpan..." : "Simpan"}
         </Button>
       </div>

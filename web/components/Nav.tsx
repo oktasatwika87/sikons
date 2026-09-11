@@ -23,9 +23,6 @@ export function Nav() {
         </Link>
 
         <div className="flex items-center gap-3">
-          <Link href="/dosen" className="text-sm hover:underline">
-            Cari Dosen
-          </Link>
           {auth.status === "loading" ? (
             <span className="text-sm text-muted-foreground">Memuat…</span>
           ) : auth.status === "authenticated" && auth.user ? (
@@ -33,19 +30,25 @@ export function Nav() {
               <span className="text-sm text-muted-foreground">
                 {auth.user.full_name}
               </span>
-              <Link href="/booking-saya" className="text-sm hover:underline">
-                Booking Saya
-              </Link>
+              {/* Link fitur per role */}
+              {auth.user.role === "student" && (
+                <Link href="/dosen" className="text-sm hover:underline">
+                  Cari Dosen
+                </Link>
+              )}
               {auth.user.role === "lecturer" && (
                 <>
-                  <Link href="/ketersediaan" className="text-sm hover:underline">
-                    Ketersediaan
-                  </Link>
                   <Link href="/dashboard" className="text-sm hover:underline">
                     Dashboard
                   </Link>
+                  <Link href="/ketersediaan" className="text-sm hover:underline">
+                    Ketersediaan
+                  </Link>
                 </>
               )}
+              <Link href="/konsultasi" className="text-sm hover:underline">
+                Konsultasi
+              </Link>
               <Link href="/akun">
                 <Button variant="ghost" size="sm">
                   Akun

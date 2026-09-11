@@ -220,59 +220,118 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
               Gagal memuat jadwal dosen.
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
-              {headers.map((day) => {
-                const slots = slotsByDate.get(day.key) ?? [];
-                return (
-                  <div
-                    key={day.key}
-                    className="rounded-lg border border-border bg-background"
-                  >
-                    <div className="border-b border-border px-3 py-2">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        {day.label}
-                      </p>
-                      <p className="text-sm font-medium">
-                        {formatJakartaShortDate(day.date)}
-                      </p>
+            <>
+              {/* Desktop: grid 7 kolom */}
+              <div className="hidden grid-cols-7 gap-3 md:grid">
+                {headers.map((day) => {
+                  const slots = slotsByDate.get(day.key) ?? [];
+                  return (
+                    <div
+                      key={day.key}
+                      className="rounded-lg border border-border bg-background"
+                    >
+                      <div className="border-b border-border px-3 py-2">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {day.label}
+                        </p>
+                        <p className="text-sm font-medium">
+                          {formatJakartaShortDate(day.date)}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1 p-2">
+                        {slots.length === 0 ? (
+                          <p className="px-1 py-3 text-center text-xs text-muted-foreground">
+                            {slotsQuery.isLoading ? "Memuat…" : "Tidak ada slot"}
+                          </p>
+                        ) : (
+                          slots.map((slot) => {
+                            const isBooked = slot.status === "booked";
+                            return (
+                              <button
+                                key={slot.id}
+                                type="button"
+                                disabled={isBooked}
+                                onClick={() => handleSlotClick(slot)}
+                                title={
+                                  isBooked
+                                    ? "Slot sudah dipesan"
+                                    : "Klik untuk memesan"
+                                }
+                                className={
+                                  "rounded-md border px-2 py-1.5 text-left text-xs transition-colors " +
+                                  (isBooked
+                                    ? "cursor-not-allowed border-border bg-muted text-muted-foreground line-through"
+                                    : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 cursor-pointer")
+                                }
+                              >
+                                {formatJakartaTime(slot.start_at)}–
+                                {formatJakartaTime(slot.end_at)}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-1 p-2">
+                  );
+                })}
+              </div>
+
+              {/* Mobile: daftar vertikal per hari */}
+              <div className="space-y-3 md:hidden">
+                {headers.map((day) => {
+                  const slots = slotsByDate.get(day.key) ?? [];
+                  if (slots.length === 0 && !slotsQuery.isLoading) {
+                    return null; // Collapse hari tanpa slot
+                  }
+                  return (
+                    <div key={day.key} className="rounded-lg border border-border bg-background">
+                      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {day.label}
+                          </p>
+                          <p className="text-sm font-medium">
+                            {formatJakartaShortDate(day.date)}
+                          </p>
+                        </div>
+                        {slots.length > 0 && (
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                            {slots.length} slot
+                          </span>
+                        )}
+                      </div>
                       {slots.length === 0 ? (
-                        <p className="px-1 py-3 text-center text-xs text-muted-foreground">
+                        <p className="px-3 py-3 text-center text-xs text-muted-foreground">
                           {slotsQuery.isLoading ? "Memuat…" : "Tidak ada slot"}
                         </p>
                       ) : (
-                        slots.map((slot) => {
-                          const isBooked = slot.status === "booked";
-                          return (
-                            <button
-                              key={slot.id}
-                              type="button"
-                              disabled={isBooked}
-                              onClick={() => handleSlotClick(slot)}
-                              title={
-                                isBooked
-                                  ? "Slot sudah dipesan"
-                                  : "Klik untuk memesan"
-                              }
-                              className={
-                                "rounded-md border px-2 py-1.5 text-left text-xs transition-colors " +
-                                (isBooked
-                                  ? "cursor-not-allowed border-border bg-muted text-muted-foreground line-through"
-                                  : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 cursor-pointer")
-                              }
-                            >
-                              {formatJakartaTime(slot.start_at)}–
-                              {formatJakartaTime(slot.end_at)}
-                            </button>
-                          );
-                        })
+                        <div className="flex flex-wrap gap-2 p-2">
+                          {slots.map((slot) => {
+                            const isBooked = slot.status === "booked";
+                            return (
+                              <button
+                                key={slot.id}
+                                type="button"
+                                disabled={isBooked}
+                                onClick={() => handleSlotClick(slot)}
+                                className={
+                                  "rounded-md border px-3 py-2 text-xs transition-colors min-h-[44px] " +
+                                  (isBooked
+                                    ? "cursor-not-allowed border-border bg-muted text-muted-foreground line-through"
+                                    : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 cursor-pointer")
+                                }
+                              >
+                                {formatJakartaTime(slot.start_at)}–{formatJakartaTime(slot.end_at)}
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
