@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useApiFetch } from "@/hooks/useApiFetch";
+import { BookingDialog } from "@/components/booking/BookingDialog";
 import type {
   Lecturer,
   LecturerSlotsResponse,
+  Slot,
 } from "@/lib/api/types";
 import {
   Card,
@@ -31,14 +33,16 @@ import {
  *  - Default minggu berjalan (Senin–Minggu Asia/Jakarta).
  *  - Tombol "Sebelumnya" dinonaktifkan kalau minggu sebelumnya seluruhnya
  *    sudah lewat (lihat isBeforeThisWeekJakarta).
- *  - Klik slot BELUM memicu apa-apa di M5c — booking form adalah M5d,
- *    jangan scope-creep ke situ (keputusan M5c #6).
+ *  - Klik slot open membuka BookingDialog.
+ *  - SLOT_ALREADY_BOOKED error ditangani dengan banner yang muncul setelah dialog tertutup.
  *
  * Format waktu SELALU lewat lib/date — tidak ada Date.toLocaleString
  * polos di sini.
  */
 export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const fetchWithRetry = useApiFetch();
 
   const lecturerQuery = useQuery<Lecturer>({
@@ -84,6 +88,23 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
 
   const handleThisWeek = () => setWeekAnchor(new Date());
 
+  const handleSlotClick = (slot: Slot) => {
+    if (slot.status === "open") {
+      setSelectedSlot(slot);
+    }
+  };
+
+  // Callback dari BookingDialog saat dialog ditutup dengan error already_booked.
+  const handleBookingError = (message: string) => {
+    setBookingError(message);
+    setSelectedSlot(null);
+  };
+
+  // Reset error saat banner di-dismiss.
+  const handleDismissError = () => {
+    setBookingError(null);
+  };
+
   if (lecturerQuery.isError) {
     return (
       <div className="container mx-auto max-w-4xl px-4 py-8">
@@ -106,6 +127,36 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
 
   return (
     <div className="container mx-auto max-w-5xl px-4 py-8">
+      {/* Banner untuk error SLOT_ALREADY_BOOKED */}
+      {bookingError && (
+        <div
+          className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+          role="alert"
+        >
+          <span>{bookingError}</span>
+          <button
+            type="button"
+            onClick={handleDismissError}
+            className="ml-4 shrink-0 rounded-md p-1 opacity-70 hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+      )}
+
       <header className="mb-6">
         {lecturer ? (
           <>
@@ -198,16 +249,17 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
                               key={slot.id}
                               type="button"
                               disabled={isBooked}
+                              onClick={() => handleSlotClick(slot)}
                               title={
                                 isBooked
                                   ? "Slot sudah dipesan"
-                                  : "Slot tersedia (M5d akan menambahkan form booking)"
+                                  : "Klik untuk memesan"
                               }
                               className={
                                 "rounded-md border px-2 py-1.5 text-left text-xs transition-colors " +
                                 (isBooked
                                   ? "cursor-not-allowed border-border bg-muted text-muted-foreground line-through"
-                                  : "border-border bg-card hover:border-primary/40 hover:bg-primary/5")
+                                  : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 cursor-pointer")
                               }
                             >
                               {formatJakartaTime(slot.start_at)}–
@@ -222,12 +274,21 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
               })}
             </div>
           )}
-          <p className="mt-4 text-xs text-muted-foreground">
-            Klik slot untuk memesan — fitur ini akan tersedia setelah
-            modul M5d.
-          </p>
         </CardContent>
       </Card>
+
+      {lecturer && selectedSlot && (
+        <BookingDialog
+          open={!!selectedSlot}
+          onOpenChange={(open) => {
+            if (!open) setSelectedSlot(null);
+          }}
+          slot={selectedSlot}
+          lecturerId={lecturerId}
+          lecturerName={lecturer.full_name}
+          onAlreadyBookedError={handleBookingError}
+        />
+      )}
     </div>
   );
 }
