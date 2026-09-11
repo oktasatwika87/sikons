@@ -88,6 +88,11 @@ jobs:
     defaults:
       run:
         working-directory: web
+    env:
+      # Explicitly set false: runner GitHub Actions Linux mungkin me-reuse
+      # env var dari workflow sebelumnya (yang pakai --ignore-scripts).
+      # Ini memastikan npm ci dijalankan dengan perilaku standar.
+      npm_config_ignore_scripts: "false"
 
     steps:
       - name: Kode sumber
@@ -100,10 +105,6 @@ jobs:
           cache: "npm"
           cache-dependency-path: web/package-lock.json
 
-      # --ignore-scripts dihapus: kombinasi flag ini dengan npm ci menyebabkan
-      # exit 1 di runner GitHub Actions Linux (npm 10.x). Debug lebih lanjut
-      # diperlukan untuk memahami penyebab spesifik. postinstall packages (fsevents,
-      # msw, unrs-resolver) aman di Linux runner.
       - name: Install dependensi
         run: npm ci
 
