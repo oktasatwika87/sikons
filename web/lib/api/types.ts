@@ -167,6 +167,14 @@ export interface CreateExceptionRequest {
   end_time?: string;   // HH:MM, opsional
 }
 
+export interface SlotReconcileSummary {
+  created: number;
+  deleted: number;
+  withdrawn: number;
+  restored: number;
+  bookings_cancelled: number;
+}
+
 export interface RuleWithSlots {
   id: string;
   slots: SlotReconcileSummary;
@@ -175,12 +183,6 @@ export interface RuleWithSlots {
 export interface ExceptionWithSlots {
   id: string;
   slots: SlotReconcileSummary;
-}
-
-export interface SlotReconcileSummary {
-  created: number;
-  updated: number;
-  deleted: number;
 }
 
 // ------------------------------------------------------------------ Error
