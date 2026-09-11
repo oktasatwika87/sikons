@@ -148,6 +148,7 @@ function DashboardWithDialog() {
       <section>
         <h2>Perlu Ditindaklanjuti</h2>
         {mockBookings
+          // eslint-disable-next-line react-hooks/purity
           .filter((b) => new Date(b.slot.start_at).getTime() < Date.now())
           .map((booking) => (
             <div key={booking.id} data-testid={`booking-${booking.id}`}>

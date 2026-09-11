@@ -18,6 +18,10 @@ import (
 func buatServerUjiLecturer(t *testing.T) *lecturerTestHelper {
 	t.Helper()
 
+	if skipIfNoDB {
+		t.Skip("TEST_DATABASE_URL kosong")
+	}
+
 	cfg := cfgUji
 	if cfg.CampusTZ == nil {
 		cfg.CampusTZ = time.Local
