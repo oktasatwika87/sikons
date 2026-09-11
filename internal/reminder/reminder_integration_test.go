@@ -19,6 +19,22 @@ import (
 // Kenapa tidak dipalsukan? Karena yang sedang diuji adalah perilaku penguncian
 // baris Postgres dengan FOR UPDATE SKIP LOCKED. Database palsu tidak akan
 // membuktikan apa pun tentang race condition.
+//
+// Tidak ada TRUNCATE di file ini, dan itu disengaja — pola yang sama dengan
+// internal/booking/service_test.go. Package lain (booking, server, dll) memakai
+// database uji yang sama dan insert notification asli lewat transaction booking.
+// Kalau kita TRUNCATE sebelum test, kita akan menghapus data mereka.
+//
+// Isolasi yang benar bukan membersihkan meja sebelum mulai, melainkan
+// memakai meja sendiri: setiap test menyuntik notification dengan booking_id
+// dan user_id unik, lalu memakai processNotification(ctx, notifID) supaya
+// query worker juga disaring ke id itu. processBatch sengaja TIDAK dipakai
+// di test ini karena akan ikut memproses baris pending milik test lain
+// di database bersama.
+//
+// Jalankan dengan:  TEST_DATABASE_URL=... go test ./internal/reminder/...
+// Kalau TEST_DATABASE_URL kosong, seluruh file ini dilewati — supaya
+// `go test ./...` biasa tetap cepat dan tidak menuntut Docker hidup.
 
 var poolUji *pgxpool.Pool
 
@@ -170,9 +186,13 @@ func buatNotification(t *testing.T, userID, bookingID string) string {
 }
 
 // TestReminderSent_Success memverifikasi bahwa:
-// - booking confirmed -> sender terpanggil
-// - status menjadi 'sent'
+// - booking confirmed -> sender terpanggil untuk notif ini
+// - status notif menjadi 'sent'
 // - sent_at terisi
+//
+// Pemakaian processNotification(ctx, notifID) (bukan processBatch) menjamin
+// test hanya memproses baris miliknya sendiri dan tidak ikut memproses
+// pending notification milik test lain di database uji bersama.
 func TestReminderSent_Success(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t)
@@ -184,9 +204,9 @@ func TestReminderSent_Success(t *testing.T) {
 	svc := New(poolUji, fake, time.UTC, time.Minute, 5, log)
 
 	ctx := context.Background()
-	processed, err := svc.processBatch(ctx)
+	processed, err := svc.processNotification(ctx, notifID)
 	if err != nil {
-		t.Fatalf("processBatch error: %v", err)
+		t.Fatalf("processNotification error: %v", err)
 	}
 	if processed != 1 {
 		t.Errorf("processed = %d, want 1", processed)
@@ -196,7 +216,7 @@ func TestReminderSent_Success(t *testing.T) {
 		t.Errorf("sender call count = %d, want 1", fake.CallCount())
 	}
 
-	// Verifikasi status di database.
+	// Verifikasi status di database — disaring ke notifID ini.
 	var status string
 	var sentAt *time.Time
 	err = poolUji.QueryRow(context.Background(), `
@@ -227,9 +247,9 @@ func TestReminderSkipped_NotConfirmed(t *testing.T) {
 	svc := New(poolUji, fake, time.UTC, time.Minute, 5, log)
 
 	ctx := context.Background()
-	processed, err := svc.processBatch(ctx)
+	processed, err := svc.processNotification(ctx, notifID)
 	if err != nil {
-		t.Fatalf("processBatch error: %v", err)
+		t.Fatalf("processNotification error: %v", err)
 	}
 	if processed != 1 {
 		t.Errorf("processed = %d, want 1", processed)
@@ -240,7 +260,7 @@ func TestReminderSkipped_NotConfirmed(t *testing.T) {
 		t.Errorf("sender call count = %d, want 0 (booking cancelled)", fake.CallCount())
 	}
 
-	// Verifikasi status di database.
+	// Verifikasi status di database — disaring ke notifID ini.
 	var status string
 	err = poolUji.QueryRow(context.Background(), `
 		SELECT status::text FROM notifications WHERE id = $1::uuid`, notifID,
@@ -278,9 +298,9 @@ func TestReminderFailed_AfterMaxAttempts(t *testing.T) {
 	svc := New(poolUji, fake, time.UTC, time.Minute, 5, log)
 
 	ctx := context.Background()
-	processed, err := svc.processBatch(ctx)
+	processed, err := svc.processNotification(ctx, notifID)
 	if err != nil {
-		t.Fatalf("processBatch error: %v", err)
+		t.Fatalf("processNotification error: %v", err)
 	}
 	if processed != 1 {
 		t.Errorf("processed = %d, want 1", processed)
@@ -321,34 +341,46 @@ func TestReminderFailed_AfterMaxAttempts(t *testing.T) {
 //     B harus melihat baris terkunci dan skip (processed == 0), bukan tunggu.
 //  4. Unblock A, tunggu selesai, assert CallCount == 1.
 //
-// MUTATION TEST:
-//  1. Comment out FOR UPDATE SKIP LOCKED di reminder.go baris ~77
-//  2. Jalankan: go test ./internal/reminder -v -run TestReminderConcurrencyVerify_SKIP_LOCKED
-//  3. Tanpa lock, goroutine B melihat baris pending (MVCC READ COMMITTED) dan ikut
-//     memproses. TEST AKAN FAIL dengan CallCount >= 1 (B ikut proses).
-//  4. Kembalikan kodenya, test PASS.
+// Catatan: test ini memakai processNotification(ctx, notifID) — bukan
+// processBatch — supaya query kedua goroutine hanya melihat baris notifID
+// ini (idempotent). Kalau pakai processBatch, setiap goroutine akan scan
+// semua pending dan ikut memproses baris dari test lain di database bersama.
 //
-// Kenapa bukan assert CallCount == 2? Karena B mungkin tidak keburu jalan sebelum
-// A commit. Tapi assertion processedB == 0 jauh lebih kuat: ini MEMVERIFIKI
-// bahwa SKIP LOCKED bekerja, bukan sekadar race.
+// MUTATION TEST:
+//  1. Comment out FOR UPDATE SKIP LOCKED di reminder.go pada query
+//     processNotification (baris ~198) DAN pada query di processBatch.
+//  2. Jalankan: go test ./internal/reminder -v -run TestReminderConcurrencyVerify_SKIP_LOCKED
+//  3. Tanpa lock, MVCC READ COMMITTED membuat B melihat baris yang sama
+//     dengan A (tidak ada lock) dan ikut memproses. Dengan FakeSender
+//     di-block, A tidak commit, B akan timeout ("tidak selesai dalam 5 detik")
+//     atau muncul panic saat tx tutup. TEST AKAN FAIL.
+//  4. Kembalikan kodenya, test PASS.
 func TestReminderConcurrencyVerify_SKIP_LOCKED(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t)
 	bookingID := buatBookingConfirmed(t, mhs, dosen)
 	_ = buatNotification(t, mhs, bookingID)
+	// Ambil id notif yang barusan dibuat supaya bisa di-scope ke processNotification.
+	var notifID string
+	err := poolUji.QueryRow(context.Background(), `
+		SELECT id::text FROM notifications
+		WHERE booking_id = $1::uuid ORDER BY scheduled_at DESC LIMIT 1`, bookingID,
+	).Scan(&notifID)
+	if err != nil {
+		t.Fatalf("mengambil id notification: %v", err)
+	}
 
 	fake := NewFakeSender()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	svc := New(poolUji, fake, time.UTC, time.Minute, 5, log)
 
 	// Blok Send() SEBELUM goroutine A mulai.
-	// Saat A memanggil processBatch, transaksinya akan terbuka dan baris terkunci.
-	// A akan berhenti di Send() — transaksinya BELUM commit.
+	// Saat A memanggil processNotification, transaksinya akan terbuka dan baris
+	// notification terkunci FOR UPDATE SKIP LOCKED.
 	fake.Block()
 
 	ctx := context.Background()
 
-	// Channel untuk menerima hasil dari goroutine.
 	type result struct {
 		processed int
 		err       error
@@ -356,16 +388,14 @@ func TestReminderConcurrencyVerify_SKIP_LOCKED(t *testing.T) {
 	resultA := make(chan result, 1)
 	resultB := make(chan result, 1)
 
-	// Goroutine A: memanggil processBatch.
+	// Goroutine A: memanggil processNotification.
 	// Dia akan berhenti di FakeSender.Send() karena di-block.
-	// Transaksinya masih terbuka, baris notification terkunci FOR UPDATE SKIP LOCKED.
 	go func() {
-		processed, err := svc.processBatch(ctx)
+		processed, err := svc.processNotification(ctx, notifID)
 		resultA <- result{processed, err}
 	}()
 
 	// Tunggu sampai A benar-benar masuk ke Send() dan berhenti.
-	// Poll SemaphoreCount() sampai >= 1, atau timeout 5 detik.
 	for i := 0; i < 5000; i++ {
 		if fake.SemaphoreCount() >= 1 {
 			break
@@ -377,10 +407,10 @@ func TestReminderConcurrencyVerify_SKIP_LOCKED(t *testing.T) {
 	}
 
 	// Sekarang goroutine B: dia harus melihat baris terkunci dan SKIP.
-	// Dengan FOR UPDATE SKIP LOCKED, B akan melewati baris yang dikunci A.
-	// Tanpa lock, B mungkin ikut memproses (double-send).
+	// processNotification dengan ID yang sama, FOR UPDATE SKIP LOCKED, akan
+	// melihat baris dipegang A dan tidak memilihnya → return 0.
 	go func() {
-		processed, err := svc.processBatch(ctx)
+		processed, err := svc.processNotification(ctx, notifID)
 		resultB <- result{processed, err}
 	}()
 
@@ -416,17 +446,20 @@ func TestReminderConcurrencyVerify_SKIP_LOCKED(t *testing.T) {
 	}
 }
 
-// TestProcessBatch_EmptyQueue memverifikasi bahwa processBatch tidak error
-// ketika tidak ada notification yang due.
-func TestProcessBatch_EmptyQueue(t *testing.T) {
+// TestProcessNotification_NotFound memverifikasi bahwa processNotification
+// dengan id yang tidak ada di tabel mengembalikan (0, nil) tanpa error.
+// Pengganti TestProcessBatch_EmptyQueue: versi lama tidak bisa lagi
+// mengasumsikan queue kosong (database uji dipakai bersama).
+func TestProcessNotification_NotFound(t *testing.T) {
 	fake := NewFakeSender()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	svc := New(poolUji, fake, time.UTC, time.Minute, 5, log)
 
 	ctx := context.Background()
-	processed, err := svc.processBatch(ctx)
+	// UUID ini dijamin tidak ada di tabel notifications.
+	processed, err := svc.processNotification(ctx, "00000000-0000-0000-0000-000000000000")
 	if err != nil {
-		t.Fatalf("processBatch error: %v", err)
+		t.Fatalf("processNotification error: %v", err)
 	}
 	if processed != 0 {
 		t.Errorf("processed = %d, want 0", processed)

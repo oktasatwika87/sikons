@@ -7,9 +7,18 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oktasatwika87/sikons/internal/notifier"
 )
+
+// notifRow menyimpan satu baris notification yang sudah diambil dari DB
+// dan siap diproses. Dipakai oleh processBatch dan processNotification.
+type notifRow struct {
+	id        string
+	bookingID string
+	attempts  int
+}
 
 // Service worker untuk mengirim reminder email.
 type Service struct {
@@ -55,6 +64,10 @@ func (s *Service) Run(ctx context.Context) error {
 }
 
 // processBatch satu putaran polling. Dipisah dari Run supaya bisa dites langsung.
+//
+// BACAAN untuk integration test: query ini memilih SEMUA notification pending
+// yang due (LIMIT 20), bukan satu per test. Test yang ingin deterministik
+// harus pakai processNotification(ctx, id) — lihat catatan di integration test.
 func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -79,11 +92,6 @@ func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 		return 0, fmt.Errorf("query notifications: %w", err)
 	}
 
-	type notifRow struct {
-		id        string
-		bookingID string
-		attempts  int
-	}
 	var rowsToProcess []notifRow
 	for rows.Next() {
 		var r notifRow
@@ -99,117 +107,11 @@ func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 	}
 
 	for _, r := range rowsToProcess {
-		processed++
-
-		// Ambil data booking terkini dengan JOIN.
-		// Menggunakan status TERKINI dari database untuk keputusan skipped/sent.
-		var studentEmail, studentName, lecturerName, topic string
-		var slotStart time.Time
-		var bookingStatus string
-		err := tx.QueryRow(ctx, `
-			SELECT u.email, u.full_name,
-			       l.full_name,
-			       b.topic,
-			       sl.start_at,
-			       b.status::text
-			FROM bookings b
-			JOIN slots sl ON sl.id = b.slot_id
-			JOIN users u ON u.id = b.student_id
-			JOIN users l ON l.id = sl.lecturer_id
-			WHERE b.id = $1::uuid`, r.bookingID,
-		).Scan(&studentEmail, &studentName, &lecturerName, &topic, &slotStart, &bookingStatus)
-		if err != nil {
-			// Booking tidak ditemukan atau error — abaikan, tetap lanjut.
-			s.log.Warn("booking not found for notification",
-				"notification_id", r.id, "booking_id", r.bookingID, "err", err)
-			// Tandai sebagai failed karena booking tidak valid.
-			_, execErr := tx.Exec(ctx, `
-				UPDATE notifications
-				SET status = 'failed', last_error = $2
-				WHERE id = $1::uuid`,
-				r.id, fmt.Sprintf("booking lookup failed: %v", err))
-			if execErr != nil {
-				s.log.Error("update notification error", "err", execErr)
-			}
-			// Commit per baris untuk memperkecil window.
-			if commitErr := tx.Commit(ctx); commitErr != nil {
-				return processed, fmt.Errorf("commit: %w", commitErr)
-			}
-			// Mulai transaksi baru untuk baris berikutnya.
-			tx, err = s.pool.Begin(ctx)
-			if err != nil {
-				return processed, fmt.Errorf("begin next transaction: %w", err)
-			}
-			defer tx.Rollback(ctx)
-			continue
-		}
-
-		// Kalau booking sudah tidak confirmed lagi, skip.
-		if bookingStatus != "confirmed" {
-			_, execErr := tx.Exec(ctx, `
-				UPDATE notifications
-				SET status = 'skipped', last_error = 'booking sudah tidak confirmed'
-				WHERE id = $1::uuid`, r.id)
-			if execErr != nil {
-				s.log.Error("update notification skipped error", "err", execErr)
-			}
-			if commitErr := tx.Commit(ctx); commitErr != nil {
-				return processed, fmt.Errorf("commit: %w", commitErr)
-			}
-			tx, err = s.pool.Begin(ctx)
-			if err != nil {
-				return processed, fmt.Errorf("begin next transaction: %w", err)
-			}
-			defer tx.Rollback(ctx)
-			continue
-		}
-
-		// Kirim email.
-		subject := fmt.Sprintf("Reminder: Konsultasi dengan %s", lecturerName)
-		body := formatEmailBody(studentName, lecturerName, slotStart, topic, s.tz)
-
-		sendErr := s.sender.Send(ctx, studentEmail, subject, body)
-
-		if sendErr != nil {
-			// Gagal kirim. Increment attempts dan periksa apakah sudah max.
-			newAttempts := r.attempts + 1
-			if newAttempts >= s.maxAttempts {
-				// Sudah mencapai batas percobaan. Tandai failed.
-				_, execErr := tx.Exec(ctx, `
-					UPDATE notifications
-					SET status = 'failed', attempts = $2,
-					    last_error = $3
-					WHERE id = $1::uuid`,
-					r.id, newAttempts, truncateError(sendErr))
-				if execErr != nil {
-					s.log.Error("update notification failed error", "err", execErr)
-				}
-				s.log.Warn("reminder failed permanently",
-					"notification_id", r.id, "attempts", newAttempts, "err", sendErr)
-			} else {
-				// Masih bisa dicoba lagi di tick berikutnya.
-				_, execErr := tx.Exec(ctx, `
-					UPDATE notifications
-					SET attempts = $2, last_error = $3
-					WHERE id = $1::uuid`,
-					r.id, newAttempts, truncateError(sendErr))
-				if execErr != nil {
-					s.log.Error("update notification attempts error", "err", execErr)
-				}
-				s.log.Warn("reminder send failed, will retry",
-					"notification_id", r.id, "attempts", newAttempts, "err", sendErr)
-			}
-		} else {
-			// Sukses. Tandai sent.
-			_, execErr := tx.Exec(ctx, `
-				UPDATE notifications
-				SET status = 'sent', sent_at = now()
-				WHERE id = $1::uuid`, r.id)
-			if execErr != nil {
-				s.log.Error("update notification sent error", "err", execErr)
-			}
-			s.log.Info("reminder sent",
-				"notification_id", r.id, "to", studentEmail)
+		if err := s.processNotificationInTx(ctx, tx, r); err != nil {
+			// Error tak terduga dari UPDATE. Tetap commit agar progres baris
+			// sebelumnya tidak hilang, lalu mulai transaksi baru.
+			s.log.Error("process notification error",
+				"notification_id", r.id, "err", err)
 		}
 
 		// Commit per baris. Ini trade-off: window antara Send() dan UPDATE
@@ -220,6 +122,7 @@ func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 		if commitErr := tx.Commit(ctx); commitErr != nil {
 			return processed, fmt.Errorf("commit: %w", commitErr)
 		}
+		processed++
 
 		// Mulai transaksi baru untuk baris berikutnya.
 		tx, err = s.pool.Begin(ctx)
@@ -230,6 +133,172 @@ func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 	}
 
 	return processed, nil
+}
+
+// processNotification memproses SATU notification berdasarkan id.
+//
+// Dipakai oleh:
+//   - integration test, supaya setiap test memproses hanya baris miliknya
+//     sendiri dan tidak ikut memproses baris pending milik test lain di
+//     database uji bersama.
+//   - production (cadangan) untuk retry manual atau trigger spesifik.
+//
+// Return 1 kalau notification ditemukan dan diproses (status apapun:
+// sent / failed / skipped). Return 0 kalau tidak ada baris cocok — bisa
+// karena id tidak ada, status bukan 'pending', belum due, atau baris
+// sedang dipegang lock worker lain (FOR UPDATE SKIP LOCKED).
+//
+// Semantik SKIP LOCKED tetap dijaga: kalau worker lain memegang lock
+// pada baris yang dimaksud, query ini melihat nol baris dan return 0.
+func (s *Service) processNotification(ctx context.Context, notificationID string) (int, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx, `
+		SELECT n.id::text, n.booking_id::text, n.attempts
+		FROM notifications n
+		WHERE n.id = $1::uuid
+		  AND n.type = 'booking_reminder'
+		  AND n.status = 'pending'
+		  AND n.scheduled_at <= now()
+		FOR UPDATE SKIP LOCKED`, notificationID)
+	if err != nil {
+		return 0, fmt.Errorf("query notification: %w", err)
+	}
+
+	var row notifRow
+	found := false
+	for rows.Next() {
+		if err := rows.Scan(&row.id, &row.bookingID, &row.attempts); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan row: %w", err)
+		}
+		found = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("rows error: %w", err)
+	}
+	if !found {
+		return 0, nil
+	}
+
+	if err := s.processNotificationInTx(ctx, tx, row); err != nil {
+		return 1, fmt.Errorf("process notification: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 1, fmt.Errorf("commit: %w", err)
+	}
+	return 1, nil
+}
+
+// processNotificationInTx berisi logika inti: ambil data booking via JOIN,
+// validasi status, kirim email, UPDATE status notification. Dipakai oleh
+// processBatch dan processNotification.
+//
+// Tidak mengelola commit/rollback — caller yang bertanggung jawab.
+// Mengembalikan error hanya untuk kesalahan tak terduga (kegagalan UPDATE
+// atau kesalahan tak terduga lainnya). Kasus bisnis biasa (booking tidak
+// ditemukan → status jadi 'failed'; status booking bukan 'confirmed' →
+// status jadi 'skipped'; email gagal → attempts++ atau 'failed') ditangani
+// secara internal dan tidak mengembalikan error.
+func (s *Service) processNotificationInTx(ctx context.Context, tx pgx.Tx, r notifRow) error {
+	// Ambil data booking terkini dengan JOIN.
+	// Menggunakan status TERKINI dari database untuk keputusan skipped/sent.
+	var studentEmail, studentName, lecturerName, topic string
+	var slotStart time.Time
+	var bookingStatus string
+	err := tx.QueryRow(ctx, `
+		SELECT u.email, u.full_name,
+		       l.full_name,
+		       b.topic,
+		       sl.start_at,
+		       b.status::text
+		FROM bookings b
+		JOIN slots sl ON sl.id = b.slot_id
+		JOIN users u ON u.id = b.student_id
+		JOIN users l ON l.id = sl.lecturer_id
+		WHERE b.id = $1::uuid`, r.bookingID,
+	).Scan(&studentEmail, &studentName, &lecturerName, &topic, &slotStart, &bookingStatus)
+	if err != nil {
+		// Booking tidak ditemukan atau error — abaikan, tetap lanjut.
+		s.log.Warn("booking not found for notification",
+			"notification_id", r.id, "booking_id", r.bookingID, "err", err)
+		// Tandai sebagai failed karena booking tidak valid.
+		_, execErr := tx.Exec(ctx, `
+			UPDATE notifications
+			SET status = 'failed', last_error = $2
+			WHERE id = $1::uuid`,
+			r.id, fmt.Sprintf("booking lookup failed: %v", err))
+		if execErr != nil {
+			return fmt.Errorf("update notification (booking failed): %w", execErr)
+		}
+		return nil
+	}
+
+	// Kalau booking sudah tidak confirmed lagi, skip.
+	if bookingStatus != "confirmed" {
+		_, execErr := tx.Exec(ctx, `
+			UPDATE notifications
+			SET status = 'skipped', last_error = 'booking sudah tidak confirmed'
+			WHERE id = $1::uuid`, r.id)
+		if execErr != nil {
+			return fmt.Errorf("update notification (skipped): %w", execErr)
+		}
+		return nil
+	}
+
+	// Kirim email.
+	subject := fmt.Sprintf("Reminder: Konsultasi dengan %s", lecturerName)
+	body := formatEmailBody(studentName, lecturerName, slotStart, topic, s.tz)
+
+	sendErr := s.sender.Send(ctx, studentEmail, subject, body)
+
+	if sendErr != nil {
+		// Gagal kirim. Increment attempts dan periksa apakah sudah max.
+		newAttempts := r.attempts + 1
+		if newAttempts >= s.maxAttempts {
+			// Sudah mencapai batas percobaan. Tandai failed.
+			_, execErr := tx.Exec(ctx, `
+				UPDATE notifications
+				SET status = 'failed', attempts = $2,
+				    last_error = $3
+				WHERE id = $1::uuid`,
+				r.id, newAttempts, truncateError(sendErr))
+			if execErr != nil {
+				return fmt.Errorf("update notification (failed): %w", execErr)
+			}
+			s.log.Warn("reminder failed permanently",
+				"notification_id", r.id, "attempts", newAttempts, "err", sendErr)
+		} else {
+			// Masih bisa dicoba lagi di tick berikutnya.
+			_, execErr := tx.Exec(ctx, `
+				UPDATE notifications
+				SET attempts = $2, last_error = $3
+				WHERE id = $1::uuid`,
+				r.id, newAttempts, truncateError(sendErr))
+			if execErr != nil {
+				return fmt.Errorf("update notification (attempts): %w", execErr)
+			}
+			s.log.Warn("reminder send failed, will retry",
+				"notification_id", r.id, "attempts", newAttempts, "err", sendErr)
+		}
+	} else {
+		// Sukses. Tandai sent.
+		_, execErr := tx.Exec(ctx, `
+			UPDATE notifications
+			SET status = 'sent', sent_at = now()
+			WHERE id = $1::uuid`, r.id)
+		if execErr != nil {
+			return fmt.Errorf("update notification (sent): %w", execErr)
+		}
+		s.log.Info("reminder sent",
+			"notification_id", r.id, "to", studentEmail)
+	}
+	return nil
 }
 
 // truncateError memotong error message supaya muat di kolom last_error (text).

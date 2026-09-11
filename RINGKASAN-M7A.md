@@ -277,7 +277,7 @@ di setiap baris import. Tidak ada perubahan logika, tidak ada kode aplikasi yang
 | `go build ./...` | exit 0 — build bersih |
 | `grep -rn "oktasatwika/sikons" .` (kecuali `.git`, `node_modules`, `.next`) | kosong setelah rename |
 
-**Test suite** (dengan `TEST_DATABASE_URL` terisi):
+**Test suite** (dengan `TEST_DATABASE_URL` terisi, `-race`):
 
 ```
 ok  github.com/oktasatwika87/sikons/internal/server       (semua PASS, dengan -race)
@@ -287,69 +287,124 @@ ok  github.com/oktasatwika87/sikons/internal/auth          PASS
 ok  github.com/oktasatwika87/sikons/internal/httpx         PASS
 ok  github.com/oktasatwika87/sikons/internal/lecturer      PASS
 ok  github.com/oktasatwika87/sikons/internal/notifier      PASS
-FAIL github.com/oktasatwika87/sikons/internal/reminder     (4 test GAGAL — pre-existing, lihat catatan di bawah)
+ok  github.com/oktasatwika87/sikons/internal/reminder      PASS (lihat cerita di bawah)
 ```
 
-**Catatan jujur tentang 4 test `internal/reminder` yang gagal:**
+**Catatan jujur tentang 4 test `internal/reminder` — dan CERITA perbaikannya:**
 
 Empat test (`TestReminderSent_Success`, `TestReminderSkipped_NotConfirmed`,
 `TestReminderFailed_AfterMaxAttempts`, `TestReminderConcurrencyVerify_SKIP_LOCKED`)
 gagal dengan pola `processed = N, want 1` di mana N makin besar tiap run.
 
-**Penyebab:** `internal/reminder/reminder_integration_test.go` TestMain **tidak
-TRUNCATE `notifications`** sebelum `m.Run()`. Setiap run menumpuk notifikasi pending
-dari run sebelumnya — worker memproses semuanya, bukan cuma yang test suntik.
+#### 3a. Diagnosis awal saya (salah, tapi buktinya tetap berguna)
 
-Bukti ini **bukan** dampak rename module:
-- Baseline (sebelum perubahan module, via `git stash`): `TestReminderSent_Success`
-  fail dengan `processed = 4, want 1`.
-- Setelah rename: `processed = 20, want 1` — angkanya naik karena lebih banyak data
-  sisa yang terakumulasi.
+Sebelum saya mencatat ini, saya cek dulu: apakah ini dampak rename module atau
+pre-existing? Cek via `git stash` (simpan perubahan module, balik ke HEAD,
+jalankan tes):
 
-Verifikasi jumlah data sisa di DB:
+```
+=== STASHED, TESTING PRE-CHANGE ===
+time=... level=INFO msg="reminder sent" ...
+--- FAIL: TestReminderSent_Success (0.04s)
+    reminder_integration_test.go:192: processed = 4, want 1
+    reminder_integration_test.go:196: sender call count = 4, want 1
+FAIL
+FAIL	github.com/oktasatwika/sikons/internal/reminder	0.530s
+```
+
+Baseline (kode sebelum rename module) juga gagal dengan pola sama, dan
+`processed = 4` bukan `processed = 20` — angka lebih kecil karena data sisa
+belum sebanyak ini. **Kesimpulan saya saat itu:** bukan dampak rename, lalu
+saya nyimpulkan root cause = TRUNCATE hilang, dan tidak saya perbaiki karena
+"di luar scope Putaran 4".
+
+Itu keputusan yang saya sesali — saya seharusnya menanyakan "kenapa angka
+naik tiap run?" alih-alih berhenti di TRUNCATE.
+
+#### 3b. Koreksi dari xiao: akar masalah sebenarnya
+
+xiao menunjukkan dengan tepat: bug-nya BUKAN TRUNCATE. Akar masalah ada di
+test itu sendiri — `processBatch` query-nya **memindai SEMUA notification
+pending** (`SELECT ... FROM notifications WHERE status='pending' AND
+scheduled_at <= now() LIMIT 20 FOR UPDATE SKIP LOCKED`), tanpa menyaring
+berdasarkan id milik test itu sendiri. Jadi test memproses baris pending
+milik package lain yang kebetulan ada di database bersama — mis. notification
+yang disuntik oleh booking test via transaction booking.
+
+Pola yang benar di project ini (lihat catatan `internal/booking/service_test.go`):
+> "Tidak ada TRUNCATE di file ini, dan itu disengaja... Isolasi yang benar
+> bukan membersihkan meja sebelum mulai, melainkan memakai meja sendiri:
+> setiap test membuat data dengan pengenal yang unik, dan setiap pemeriksaan
+> disaring berdasarkan pengenal itu."
+
+#### 3c. Fix yang diterapkan
+
+Saya tambahkan method baru di `Service`:
+
+```go
+func (s *Service) processNotification(ctx context.Context, notificationID string) (int, error)
+```
+
+— versi scoped dari `processBatch`. Query-nya:
+```sql
+SELECT n.id::text, n.booking_id::text, n.attempts
+FROM notifications n
+WHERE n.id = $1::uuid
+  AND n.type = 'booking_reminder'
+  AND n.status = 'pending'
+  AND n.scheduled_at <= now()
+FOR UPDATE SKIP LOCKED
+```
+
+Logika JOIN + status check + Send + UPDATE diekstrak ke helper
+`processNotificationInTx(ctx, tx, r)` yang dipakai oleh kedua metode
+(`processBatch` di production worker, `processNotification` di test).
+Tetap menjaga per-row commit window — tradeoff exactly-once vs window
+dipertahankan persis seperti sebelumnya.
+
+**File yang diubah:**
+- `internal/reminder/reminder.go` — tambah `notifRow` struct level paket,
+  tambah `processNotification` dan `processNotificationInTx`, refactor
+  `processBatch` memakai helper.
+- `internal/reminder/reminder_integration_test.go` — 4 test GAGAL sebelumnya
+  sekarang pakai `svc.processNotification(ctx, notifID)`. `TestProcessBatch_EmptyQueue`
+  (yang asumsinya tidak bisa dijaga di database bersama) dikonversi jadi
+  `TestProcessNotification_NotFound` dengan UUID non-existent.
+
+**`TestReminderConcurrencyVerify_SKIP_LOCKED`** masih menguji semantik yang
+sama (FOR UPDATE SKIP LOCKED pada baris notification): goroutine A dan B
+keduanya memanggil `processNotification(ctx, notifID)` dengan ID yang SAMA.
+A memegang lock, B melihat nol baris (SKIP LOCKED). Mutation test instruction
+di-comment block test juga di-update untuk menunjuk ke query `processNotification`.
+
+#### 3d. Validasi setelah fix
+
+| Skenario | Hasil |
+|---|---|
+| `go test ./internal/reminder -race -count=1` sendirian | **9/9 PASS** (4 integration + 5 unit) |
+| `go test ./internal/booking ./internal/reminder -race -count=1` bersamaan | keduanya **PASS** — bukti isolasi genuine |
+| `go test ./... -race -count=1` (semua paket) | **9/9 paket PASS, 0 FAIL** — `go test ./...` genuinely all-green untuk pertama kalinya |
+
+Robustness check: ketika DB sudah terakumulasi 626 pending + 108 sent +
+12 failed + 55 skipped dari run-run sebelumnya, `./internal/reminder -race`
+tetap PASS. Fix tidak bergantung pada queue kosong.
+
 ```
 $ SELECT status, COUNT(*) FROM notifications GROUP BY status;
- pending | 305
- sent    |  99
- failed  |   8
- skipped |  51
+ pending | 626
+ sent    | 108
+ failed  |  12
+ skipped |  55
 ```
-
-**Rekomendasi perbaikan (di luar scope Putaran 4 ini):**
-tambah TRUNCATE di TestMain sebelum `m.Run()` — 3 baris. Tapi karena ini pre-existing
-dan bukan dampak rename module, saya tidak diam-diam memperbaikinya. Isu ini akan
-ikut menghalangi CI hijau; perlu diputuskan terpisah apakah fix di sini atau di M4.
 
 ### 4. Status push ke `oktasatwika87/sikons`
 
-**Tidak bisa push di turn ini karena:**
+**Status awal (commit `2f8ee05`, sebelum fix reminder):** push tertahan oleh
+classifier Claude Code — dieksekusi ulang setelah xiao membuat repo di
+GitHub dan memberi approval eksplisit. Repo `oktasatwika87/sikons` belum
+diverifikasi ada di sisi GitHub — saya cek dulu via fetch sebelum push.
 
-1. Tidak ada `gh` CLI di mesin (`which gh` → not found).
-2. Tidak ada akses browser untuk membuat repo kosong di
-   `https://github.com/new` — itu aksi xiao di browser.
-
-**Yang sudah dilakukan:**
-- Remote `origin` yang ada saat ini masih menunjuk ke `https://github.com/oktasatwika/sikons.git`
-  (akun lama). Akan diganti sebelum push ke akun baru.
-
-**Yang menunggu aksi xiao:**
-1. Buka https://github.com/new
-2. Isi:
-   - Owner: `oktasatwika87`
-   - Repository name: `sikons`
-   - Visibility: **Public**
-   - **JANGAN** centang "Add a README file" / "Add .gitignore" / "Choose a license"
-     (repo harus kosong, supaya push pertama tidak ditolak karena non-fast-forward)
-3. Setelah repo ada, beri tahu — saya akan jalankan:
-
-```bash
-git remote set-url origin https://github.com/oktasatwika87/sikons.git
-git push -u origin main
-```
-
-Lalu cek tab Actions di https://github.com/oktasatwika87/sikons/actions dan laporkan
-status aktual ketiga job (`backend`, `frontend`, `repo-integrity`) — hijau atau
-merah — di sini setelah run selesai.
+_(Bagian ini akan diisi setelah push dan inspeksi Actions sungguhan.)_
 
 ## Keputusan teknis
 
@@ -382,6 +437,31 @@ Hook `.git/hooks/pre-commit` langkah 2 tidak mengecualikan `.sql/.json/.md`. Itu
 Perubahan bersifat mekanis (`sed`-able) dan atomik — tidak ada gunanya memecah jadi
 19 commit. Kalau ada satu yang lupa, build langsung gagal. Satu commit = satu
 penyebab yang bisa di-revert.
+
+**Mengapa fix reminder test lewat method baru `processNotification`, bukan TRUNCATE?**
+Tiga alasan:
+1. **Pola project** — `internal/booking/service_test.go` (M2a) sudah eksplisit
+   melarang TRUNCATE karena package paralel menjalankan test di database uji
+   yang sama dan TRUNCATE akan menghapus data mereka.
+2. **Test lebih cepat** — TRUNCATE + re-seed di tiap test jauh lebih mahal
+   daripada query filtered-to-id; dalam skala ratusan test yang kumulatif.
+3. **Method baru punya nilai produksi** — `processNotification(ctx, id)`
+   berguna untuk retry manual atau admin trigger ("kirim ulang reminder untuk
+   booking X"). Jadi yang bertambah bukan API cadik.
+
+**Mengapa refactor `processBatch` memakai helper `processNotificationInTx`?**
+Tanpa helper, logika JOIN + status check + Send + UPDATE akan diduplikasi
+antara `processBatch` dan `processNotification` — padahal intinya identik.
+Helper memegang tx sebagai argumen (bukan membuat tx sendiri) sehingga caller
+yang mengelola commit-per-row seperti `processBatch` lakukan sekarang. Itu
+trade-off window exactly-once yang sudah ada sebelumnya, tidak diubah.
+
+**Mengapa `TestProcessBatch_EmptyQueue` dikonversi jadi `TestProcessNotification_NotFound`, bukan dihapus?**
+Test aslinya mengasumsikan queue kosong — asumsi itu tidak bisa dijaga di
+database bersama. Menghapus menghilangkan cakupan untuk path "no matching row"
+yang penting untuk memastikan query SKIP LOCKED tidak error saat ID tidak ada.
+Konversi memakai UUID `00000000-0000-0000-0000-000000000000` yang dijamin tidak
+ada di tabel — deterministik tanpa TRUNCATE.
 
 **Mengapa tidak menunggu sampai push berhasil baru ditulis ringkasannya?**
 Karena dokumentasi Putaran 4 mencatat fakta **apa yang dilakukan** dan **apa yang
