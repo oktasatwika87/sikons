@@ -56,11 +56,18 @@ jobs:
       - name: Build
         run: go build ./...
 
-      # Buat database dan jalankan migrasi dengan golang-migrate CLI.
+      # Siapkan database dan jalankan migrasi.
+      # migrate CLI tidak tersedia di repo apt, jadi diunduh langsung dari
+      # release GitHub. Versi dipinning sama dengan docker-compose.yml
+      # (migrate/migrate:v4.17.1) supaya perilaku migrasi lokal dan CI identik.
       - name: Siapkan database uji
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null 2>&1
           until pg_isready -h localhost -p 5432 -U postgres 2>/dev/null; do sleep 1; done
+          curl -fsSL -o /tmp/migrate.tgz \
+            https://github.com/golang-migrate/migrate/releases/download/v4.17.1/migrate.linux-amd64.tar.gz
+          tar -xzf /tmp/migrate.tgz -C /tmp && sudo mv /tmp/migrate /usr/local/bin/migrate
+          migrate -version
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE sikons_test;" 2>/dev/null || true
           migrate -path=migrations -database="$TEST_DATABASE_URL" -verbose up
 
@@ -93,8 +100,12 @@ jobs:
           cache: "npm"
           cache-dependency-path: web/package-lock.json
 
+      # --ignore-scripts: postinstall script di project ini hanya dari msw,
+      # unrs-resolver, dan fsevents. fsevents macOS-only — di runner Linux
+      # tidak relevan. msw & unrs-resolver dipakai untuk testing lokal dan
+      # tidak dibutuhkan untuk type-check/lint/test/build. Mskip aman.
       - name: Install dependensi
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Type check
         run: npx tsc --noEmit
@@ -118,19 +129,50 @@ jobs:
       - name: Kode sumber
         uses: actions/checkout@v4
 
+      # Hook lokal (.git/hooks/pre-commit) memindai SEMUA tracked file
+      # tanpa pengecualian ekstensi. Tapi perl dalam mode -CSD (UTF-8 strict)
+      # akan FATAL pada byte yang bukan UTF-8 valid — file biner seperti
+      # favicon.ico akan menyebabkan "Malformed UTF-8 character (fatal)"
+      # dan exit 25, padahal hook asli tidak crash di file itu karena
+      # membacanya byte-stream (bukan UTF-8).
+      #
+      # Solusi: dalam satu program perl, cek dulu apakah file mengandung null
+      # byte (signature khas biner). Kalau ya, skip. Kalau tidak, scan UTF-8.
+      # Pendekatan ini portable (perl ada di ubuntu-latest dan macOS), tanpa
+      # dependency `file` atau `grep -P` (yang perilakunya beda antar OS),
+      # dan mempertahankan logika "scan semua file teks" yang konsisten
+      # dengan hook lokal.
       - name: Periksa aksara non-Latin
         run: |
-          GAGAL=0
-          while IFS= read -r file; do
-            KONTEN=$(perl -CSD -ne 'print "'"$file"':$.: $_" if /[\x{3000}-\x{30ff}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}\x{ff00}-\x{ffef}\x{1f300}-\x{1faff}]/' "$file" 2>/dev/null)
-            if [ -n "$KONTEN" ]; then
-              echo "$KONTEN"
-              GAGAL=1
-            fi
-          done < <(git ls-files)
-          if [ "$GAGAL" -ne 0 ]; then
-            exit 1
-          fi
+          perl -CSD -e '
+            use strict;
+            use warnings;
+            my $gagal = 0;
+            open my $ls, "-|", "git", "ls-files" or die "git ls-files: $!";
+            while (my $file = <$ls>) {
+              chomp $file;
+              next unless -f $file;
+              open my $fh, "<:raw", $file or do {
+                warn "skip (tidak bisa dibuka): $file\n";
+                next;
+              };
+              my $content = do { local $/; <$fh> };
+              close $fh;
+              # Skip file biner (signature null byte) — perl UTF-8 strict
+              # akan fatal di sini, bukan ASCII artefak yang seharusnya.
+              next if $content =~ /\0/;
+              open my $th, "<:encoding(UTF-8)", \$content or die;
+              while (<$th>) {
+                if (/[\x{3000}-\x{30ff}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}\x{ff00}-\x{ffef}\x{1f300}-\x{1faff}]/) {
+                  print "$file:$.: $_";
+                  $gagal = 1;
+                }
+              }
+              close $th;
+            }
+            close $ls;
+            exit($gagal ? 1 : 0);
+          '
 
       - name: Periksa file perkakas eksternal
         run: |
