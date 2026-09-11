@@ -397,14 +397,31 @@ $ SELECT status, COUNT(*) FROM notifications GROUP BY status;
  skipped |  55
 ```
 
-### 4. Status push ke `oktasatwika87/sikons`
+### 4. Status push ke `oktasatwika87/sikons` — hasil aktual
 
-**Status awal (commit `2f8ee05`, sebelum fix reminder):** push tertahan oleh
-classifier Claude Code — dieksekusi ulang setelah xiao membuat repo di
-GitHub dan memberi approval eksplisit. Repo `oktasatwika87/sikons` belum
-diverifikasi ada di sisi GitHub — saya cek dulu via fetch sebelum push.
+**Push pertama** (`04988f7`, commit "fix ci: ..."):
+- Push berhasil — branch up-to-date dengan `origin/main`.
+- **CI Run #1** (`34581300645`, trigger: push commit `04988f7`):
+  - `backend`: ✅ **success** (10/10 steps hijau — gofmt, vet, build, migrate, test -race, coverage)
+  - `frontend`: ❌ **failure** — step "Install dependensi" (`npm ci --ignore-scripts`) exit 1
+  - `repo-integrity`: ❌ **failure** — step "Periksa file perkakas eksternal" exit 1
 
-_(Bagian ini akan diisi setelah push dan inspeksi Actions sungguhan.)_
+**Diagnosis awal:**
+- Backend: langsung hijau. Kode aman.
+- Frontend: `npm ci --ignore-scripts` lulus lokal (exit 0, 735 packages). Kemungkinan
+  transient network issue di runner GitHub Actions — `npm install` di runner bisa
+  timeout atau rate-limit.
+- Repo integrity: langkah "Periksa aksara non-Latin" ✅, "Periksa file perkakas
+  eksternal" ❌. Secara lokal check ini bersih (tanpa output). Runner mungkin
+  dalam state berbeda.
+
+**CI Run #2** (`34582089301`, commit `5879151` debug):
+- Commit ini menambah debug output ke step "Periksa file perkakas eksternal" —
+  mencetak `git ls-files` + hex matched content ke log, supaya bisa divisualisasikan
+  di runner meskipun exit code non-zero.
+- _(Hasil akan diisi setelah run selesai.)_
+
+_(Bagian push + CI akan diperbarui lagi setelah CI benar-benar hijau.)_
 
 ## Keputusan teknis
 
