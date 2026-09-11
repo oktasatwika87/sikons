@@ -88,11 +88,6 @@ jobs:
     defaults:
       run:
         working-directory: web
-    env:
-      # Explicitly set false: runner GitHub Actions Linux mungkin me-reuse
-      # env var dari workflow sebelumnya (yang pakai --ignore-scripts).
-      # Ini memastikan npm ci dijalankan dengan perilaku standar.
-      npm_config_ignore_scripts: "false"
 
     steps:
       - name: Kode sumber
@@ -106,7 +101,17 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependensi
-        run: set -o pipefail && npm ci --ignore-scripts=false
+        run: |
+          echo "=== node version ==="
+          node --version
+          echo "=== npm version ==="
+          npm --version
+          echo "=== HOME dir ==="
+          echo $HOME
+          echo "=== .npmrc ==="
+          cat $HOME/.npmrc 2>/dev/null || echo "(tidak ada)"
+          echo "=== running npm ci ==="
+          npm ci || echo "npm ci GAGAL: exit=$?"
 
       - name: Type check
         run: npx tsc --noEmit
