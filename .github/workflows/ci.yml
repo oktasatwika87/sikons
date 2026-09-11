@@ -100,11 +100,10 @@ jobs:
           cache: "npm"
           cache-dependency-path: web/package-lock.json
 
-      # --ignore-scripts dihapus: flag ini menyebabkan npm ci exit 1 di runner
-      # GitHub Actions Linux (npm 10.x bawaan actions/setup-node), padahal tanpa
-      # flag npm ci langsung lulus. Kemungkinan runner npm punya bug spesifik
-      # pada kombinasi --ignore-scripts + ci. postinstall packages (fsevents,
-      # msw, unrs-resolver) aman di Linux — tidak menyebabkan error.
+      # --ignore-scripts dihapus: kombinasi flag ini dengan npm ci menyebabkan
+      # exit 1 di runner GitHub Actions Linux (npm 10.x). Debug lebih lanjut
+      # diperlukan untuk memahami penyebab spesifik. postinstall packages (fsevents,
+      # msw, unrs-resolver) aman di Linux runner.
       - name: Install dependensi
         run: npm ci
 
@@ -177,9 +176,16 @@ jobs:
 
       - name: Periksa file perkakas eksternal
         run: |
-          IKUT_TERlacak=$(git ls-files | grep -i -E '^CLAUDE\.md$|^\.claude/|^\.cursor/|^\.aider|AGENTS\.md' 2>/dev/null)
-          if [ -n "$IKUT_TERlacak" ]; then
-            echo "File berikut ikut dilacak git:"
-            echo "$IKUT_TERlacak"
+          echo "=== git ls-files output ==="
+          git ls-files | tee /tmp/all_files.txt
+          echo "=== grep matched ==="
+          MATCHED=$(git ls-files | grep -i -E '^CLAUDE\.md$|^\.claude/|^\.cursor/|^\.aider|AGENTS\.md')
+          echo "matched=[$MATCHED]"
+          echo "matched_len=${#MATCHED}"
+          echo "matched_lines=$(echo "$MATCHED" | wc -l)"
+          if [ -n "$MATCHED" ]; then
+            echo "ERROR: file terlarang ditemukan:"
+            echo "$MATCHED"
             exit 1
           fi
+          echo "PASS: tidak ada file perkakas eksternal"
