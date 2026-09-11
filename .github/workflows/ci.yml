@@ -100,12 +100,13 @@ jobs:
           cache: "npm"
           cache-dependency-path: web/package-lock.json
 
-      # --ignore-scripts: postinstall script di project ini hanya dari msw,
-      # unrs-resolver, dan fsevents. fsevents macOS-only — di runner Linux
-      # tidak relevan. msw & unrs-resolver dipakai untuk testing lokal dan
-      # tidak dibutuhkan untuk type-check/lint/test/build. Mskip aman.
+      # --ignore-scripts dihapus: flag ini menyebabkan npm ci exit 1 di runner
+      # GitHub Actions Linux (npm 10.x bawaan actions/setup-node), padahal tanpa
+      # flag npm ci langsung lulus. Kemungkinan runner npm punya bug spesifik
+      # pada kombinasi --ignore-scripts + ci. postinstall packages (fsevents,
+      # msw, unrs-resolver) aman di Linux — tidak menyebabkan error.
       - name: Install dependensi
-        run: npm ci --ignore-scripts
+        run: npm ci
 
       - name: Type check
         run: npx tsc --noEmit
@@ -176,16 +177,9 @@ jobs:
 
       - name: Periksa file perkakas eksternal
         run: |
-          {
-            echo "=== Debug: git ls-files ==="
-            git ls-files | tee /tmp/ls-files.txt
-            echo "=== Debug: matched lines ==="
-            git ls-files | grep -i -E '^CLAUDE\.md$|^\.claude/|^\.cursor/|^\.aider|AGENTS\.md' | tee /tmp/matched.txt || true
-            echo "=== Matched content (hex) ==="
-            xxd /tmp/matched.txt 2>/dev/null || echo "(empty)"
-          } > /tmp/repo-debug.txt 2>&1
-          cat /tmp/repo-debug.txt
-          if [ -s /tmp/matched.txt ]; then
-            echo "GAGAL: file terlarang ditemukan"
+          IKUT_TERlacak=$(git ls-files | grep -i -E '^CLAUDE\.md$|^\.claude/|^\.cursor/|^\.aider|AGENTS\.md' 2>/dev/null)
+          if [ -n "$IKUT_TERlacak" ]; then
+            echo "File berikut ikut dilacak git:"
+            echo "$IKUT_TERlacak"
             exit 1
           fi
