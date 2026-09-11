@@ -20,6 +20,7 @@ import {
   weekDayHeaders,
   weekDaysJakarta,
   formatWeekRangeLabel,
+  isSameJakartaDay,
 } from "@/lib/date";
 
 describe("lib/date — konversi zona Asia/Jakarta", () => {
@@ -146,5 +147,30 @@ describe("lib/date — konversi zona Asia/Jakarta", () => {
     expect(formatJakartaShortDate("2026-09-10T01:00:00Z")).toBe("10 Sep");
     // Batas hari: 17:00 UTC tanggal 10 → 00:00 tanggal 11 WIB.
     expect(formatJakartaShortDate("2026-09-10T17:00:00Z")).toBe("11 Sep");
+  });
+});
+
+describe("isSameJakartaDay", () => {
+  it("17:00 UTC dan 18:00 UTC tanggal sama di WIB → true", () => {
+    // 2026-09-10T17:00:00Z = 2026-09-11T00:00+07:00
+    // 2026-09-10T18:00:00Z = 2026-09-11T01:00+07:00
+    // Keduanya di tanggal 11 September WIB
+    expect(isSameJakartaDay("2026-09-10T17:00:00Z", "2026-09-10T18:00:00Z")).toBe(true);
+  });
+
+  it("16:59 UTC dan 17:00 UTC beda hari di WIB → false", () => {
+    // 2026-09-10T16:59:00Z = 2026-09-10T23:59+07:00
+    // 2026-09-10T17:00:00Z = 2026-09-11T00:00+07:00
+    expect(isSameJakartaDay("2026-09-10T16:59:00Z", "2026-09-10T17:00:00Z")).toBe(false);
+  });
+
+  it("tanggal sama dengan offset berbeda → true", () => {
+    expect(isSameJakartaDay("2026-09-11T00:00:00+07:00", "2026-09-10T17:00:00Z")).toBe(true);
+    expect(isSameJakartaDay("2026-09-11T12:00:00+07:00", "2026-09-11T05:00:00Z")).toBe(true);
+  });
+
+  it("Date object vs string → tetap bekerja", () => {
+    const date = new Date("2026-09-11T00:00:00+07:00");
+    expect(isSameJakartaDay(date, "2026-09-10T17:00:00Z")).toBe(true);
   });
 });

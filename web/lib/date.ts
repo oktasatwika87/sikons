@@ -107,7 +107,23 @@ export function jakartaDateKey(value: string | Date): string {
   return formatInTimeZone(parseRFC3339(value), TIMEZONE, "yyyy-MM-dd");
 }
 
-/** Mulai minggu (Senin) di zona Asia/Jakarta untuk tanggal acuan. */
+/**
+ * Cek apakah dua tanggal berada di hari yang SAMA menurut zona Asia/Jakarta.
+ *
+ * PENTING: Bandingkan dua Instant terhadap kalender WIB, BUKAN komponen
+ * tanggal UTC. Ini adalah operasi KONSEP KALENDER, bukan perbandingan epoch.
+ *
+ * @param a Tanggal pertama (RFC3339 atau Date)
+ * @param b Tanggal kedua (RFC3339 atau Date)
+ * @returns true kalau keduanya jatuh di tanggal WIB yang sama
+ *
+ * Contoh:
+ * - "2026-09-10T17:00:00Z" (11 Sep 00:00 WIB) dan "2026-09-11T09:00:00Z" (11 Sep 09:00 WIB) → true
+ * - "2026-09-10T16:00:00Z" (10 Sep 23:00 WIB) dan "2026-09-11T01:00:00Z" (11 Sep 08:00 WIB) → false
+ */
+export function isSameJakartaDay(a: string | Date, b: string | Date): boolean {
+  return jakartaDateKey(a) === jakartaDateKey(b);
+}
 export function startOfWeekJakarta(reference: string | Date = new Date()): Date {
   // Strategi: bangun wall-time Senin di zona Jakarta sebagai string ISO,
   // lalu konversi ke Date UTC via fromZonedTime. Hasilnya selalu titik
