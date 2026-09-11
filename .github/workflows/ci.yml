@@ -188,13 +188,19 @@ jobs:
 
       - name: Periksa file perkakas eksternal
         run: |
-          echo "=== git ls-files output ==="
-          git ls-files | tee /tmp/all_files.txt
-          echo "=== grep matched ==="
-          MATCHED=$(git ls-files | grep -i -E '^CLAUDE\.md$|^\.claude/|^\.cursor/|^\.aider|AGENTS\.md')
-          echo "matched=[$MATCHED]"
-          echo "matched_len=${#MATCHED}"
-          echo "matched_lines=$(echo "$MATCHED" | wc -l)"
+          MATCHED=$(perl -CSD -ne '
+            chomp;
+            my $f = $_;
+            # Case-insensitive: .aider, .claude/, .cursor/, CLAUDE.MD, AGENTS.MD
+            if ($f =~ /^\.aider\z/i || $f =~ /^\.claude\//i || $f =~ /^\.cursor\//i ||
+                $f =~ /^\.claude\z/i || $f =~ /^\.cursor\z/i ||
+                $f =~ /^\.claude\.md\z/i ||
+                $f =~ /^\.agents\.md\z/i ||
+                $f =~ /CLAUDE\.MD\z/i ||
+                $f =~ /AGENTS\.MD\z/i) {
+              print "$f\n";
+            }
+          ' < <(git ls-files))
           if [ -n "$MATCHED" ]; then
             echo "ERROR: file terlarang ditemukan:"
             echo "$MATCHED"
