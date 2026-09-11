@@ -97,21 +97,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
-          cache-dependency-path: web/package-lock.json
+          # Cache dinonaktifkan: runner me-reuse cache dari previous run
+          # yang mungkin membawa state npm yang salah.
+          # Baseline minimal: cache off + npm ci polos.
+          # cache: "npm"
+          # cache-dependency-path: web/package-lock.json
 
       - name: Install dependensi
-        run: |
-          echo "=== node version ==="
-          node --version
-          echo "=== npm version ==="
-          npm --version
-          echo "=== HOME dir ==="
-          echo $HOME
-          echo "=== .npmrc ==="
-          cat $HOME/.npmrc 2>/dev/null || echo "(tidak ada)"
-          echo "=== running npm ci ==="
-          npm ci || echo "npm ci GAGAL: exit=$?"
+        run: npm ci
 
       - name: Type check
         run: npx tsc --noEmit
