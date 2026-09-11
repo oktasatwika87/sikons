@@ -41,7 +41,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
   const parsed = createRuleSchema.safeParse(form);
   const slotCount = parsed.success ? calcSlotCount(parsed.data) : 0;
 
-  function handleChange(field: keyof CreateRuleValues, value: string | number) {
+  function handleChange(field: keyof CreateRuleValues, value: string | number | undefined) {
     setForm((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => {
       const next = { ...prev };
