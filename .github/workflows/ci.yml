@@ -176,9 +176,16 @@ jobs:
 
       - name: Periksa file perkakas eksternal
         run: |
-          IKUT_TERlacak=$(git ls-files | grep -i -E '^CLAUDE\.md$|^\.claude/|^\.cursor/|^\.aider|AGENTS\.md' 2>/dev/null)
-          if [ -n "$IKUT_TERlacak" ]; then
-            echo "File berikut ikut dilacak git:"
-            echo "$IKUT_TERlacak"
+          {
+            echo "=== Debug: git ls-files ==="
+            git ls-files | tee /tmp/ls-files.txt
+            echo "=== Debug: matched lines ==="
+            git ls-files | grep -i -E '^CLAUDE\.md$|^\.claude/|^\.cursor/|^\.aider|AGENTS\.md' | tee /tmp/matched.txt || true
+            echo "=== Matched content (hex) ==="
+            xxd /tmp/matched.txt 2>/dev/null || echo "(empty)"
+          } > /tmp/repo-debug.txt 2>&1
+          cat /tmp/repo-debug.txt
+          if [ -s /tmp/matched.txt ]; then
+            echo "GAGAL: file terlarang ditemukan"
             exit 1
           fi
