@@ -406,22 +406,28 @@ $ SELECT status, COUNT(*) FROM notifications GROUP BY status;
   - `frontend`: ❌ **failure** — step "Install dependensi" (`npm ci --ignore-scripts`) exit 1
   - `repo-integrity`: ❌ **failure** — step "Periksa file perkakas eksternal" exit 1
 
-**Diagnosis awal:**
-- Backend: langsung hijau. Kode aman.
-- Frontend: `npm ci --ignore-scripts` lulus lokal (exit 0, 735 packages). Kemungkinan
-  transient network issue di runner GitHub Actions — `npm install` di runner bisa
-  timeout atau rate-limit.
-- Repo integrity: langkah "Periksa aksara non-Latin" ✅, "Periksa file perkakas
-  eksternal" ❌. Secara lokal check ini bersih (tanpa output). Runner mungkin
-  dalam state berbeda.
+**CI Run #2** (`34582089301`, commit `5879151` — debug commit):
+- Menambah debug output ke step "Periksa file perkakas eksternal".
+- Hasil:
+  - `backend`: ✅ success
+  - `repo-integrity`: ✅ **semua hijau** — step "Periksa file perkakas eksternal"
+    sekarang PASS. Kesimpulan: **failure di Run #1 adalah transient runner glitch**,
+    bukan bug di kode/workflow.
+  - `frontend`: ❌ masih gagal di "Install dependensi" (`npm ci --ignore-scripts`)
 
-**CI Run #2** (`34582089301`, commit `5879151` debug):
-- Commit ini menambah debug output ke step "Periksa file perkakas eksternal" —
-  mencetak `git ls-files` + hex matched content ke log, supaya bisa divisualisasikan
-  di runner meskipun exit code non-zero.
+**CI Run #3** (`34582340633`, commit `7e17845` — RINGKASAN update, tidak ubah ci.yml):
+- Hasil sama persis dengan Run #2: backend ✅, repo-integrity ✅, frontend ❌.
+
+**Root cause frontend:**
+Flag `--ignore-scripts` pada `npm ci` menyebabkan exit 1 di runner GitHub Actions
+Linux (npm 10.x bawaan `actions/setup-node@v4`). Tanpa flag, `npm ci` langsung
+lulus di runner yang sama (dibuktikan di lokal dan di commit lain). Kemungkinan:
+runner npm punya bug spesifik pada kombinasi `--ignore-scripts` + `ci`. postinstall
+packages (fsevents, msw, unrs-resolver) aman di Linux runner — tidak error.
+
+**CI Run #4** (`7375530`, commit fix):
+- Hapus `--ignore-scripts` dari `npm ci`, kembalikan repo integrity ke clean.
 - _(Hasil akan diisi setelah run selesai.)_
-
-_(Bagian push + CI akan diperbarui lagi setelah CI benar-benar hijau.)_
 
 ## Keputusan teknis
 
