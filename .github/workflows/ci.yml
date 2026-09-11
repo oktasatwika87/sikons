@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+env:
+  # PAKAI NAMA YANG SAMA DENGAN MAKEFILE — variabel ini dibaca oleh `make test`.
+  TEST_DATABASE_URL: "postgres://postgres:postgres@localhost:5432/sikons_test?sslmode=disable"
+
+jobs:
+  # ── Backend ────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRURES_DB: sikons_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Kode sumber
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # gofmt — gagal kalau ada file belum diformat.
+      - name: Periksa format
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "File belum diformat gofmt:"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Analisis statis
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      # Buat database dan jalankan migrasi dengan golang-migrate CLI.
+      - name: Siapkan database uji
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null 2>&1
+          until pg_isready -h localhost -p 5432 -U postgres 2>/dev/null; do sleep 1; done
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE sikons_test;" 2>/dev/null || true
+          migrate -path=migrations -database="$TEST_DATABASE_URL" -verbose up
+
+      - name: Test dengan race detector
+        run: go test ./... -race -count=1
+
+      # Coverage bukan gate — hanya info di job summary.
+      - name: Ringkasan coverage
+        run: |
+          go test ./... -coverprofile=coverage.out -count=1
+          go tool cover -func=coverage.out | tee "$GITHUB_STEP_SUMMARY"
+          rm coverage.out
+
+  # ── Frontend ───────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Kode sumber
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependensi
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit test
+        run: npm test -- --run
+
+      - name: Build
+        run: npm run build
+
+  # ── Repo lint ──────────────────────────────────────────────────────────────
+  repo-integrity:
+    name: Repo integrity
+    runs-on: ubuntu-latest
+    # Working tree selalu bersih saat di-pull request, tapi step ini
+    # tetap jalan di push untuk menangkap masalah sejak awal.
+    steps:
+      - name: Kode sumber
+        uses: actions/checkout@v4
+
+      - name: Periksa aksara non-Latin
+        run: |
+          GAGAL=0
+          while IFS= read -r file; do
+            KONTEN=$(perl -CSD -ne 'print "'"$file"':$.: $_" if /[\x{3000}-\x{30ff}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}\x{ff00}-\x{ffef}\x{1f300}-\x{1faff}]/' "$file" 2>/dev/null)
+            if [ -n "$KONTEN" ]; then
+              echo "$KONTEN"
+              GAGAL=1
+            fi
+          done < <(git ls-files)
+          if [ "$GAGAL" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Periksa file perkakas eksternal
+        run: |
+          IKUT_TERlacak=$(git ls-files | grep -i -E '^CLAUDE\.md$|^\.claude/|^\.cursor/|^\.aider|AGENTS\.md' 2>/dev/null)
+          if [ -n "$IKUT_TERlacak" ]; then
+            echo "File berikut ikut dilacak git:"
+            echo "$IKUT_TERlacak"
+            exit 1
+          fi

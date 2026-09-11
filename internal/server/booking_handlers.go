@@ -26,15 +26,15 @@ type createBookingRequest struct {
 }
 
 type bookingResponse struct {
-	ID             string     `json:"id"`
-	Status         string     `json:"status"`
-	Topic          string     `json:"topic"`
-	Description    string     `json:"description"`
-	CreatedAt      string     `json:"created_at"`
-	Slot           slotRef    `json:"slot"`
-	Lecturer       *personRef `json:"lecturer,omitempty"`
-	Student        *personRef `json:"student,omitempty"`
-	LecturerNote   string     `json:"lecturer_note,omitempty"`
+	ID           string     `json:"id"`
+	Status       string     `json:"status"`
+	Topic        string     `json:"topic"`
+	Description  string     `json:"description"`
+	CreatedAt    string     `json:"created_at"`
+	Slot         slotRef    `json:"slot"`
+	Lecturer     *personRef `json:"lecturer,omitempty"`
+	Student      *personRef `json:"student,omitempty"`
+	LecturerNote string     `json:"lecturer_note,omitempty"`
 }
 
 type slotRef struct {
@@ -280,11 +280,11 @@ func (s *Server) handleGetBooking(w http.ResponseWriter, r *http.Request) {
 // sengaja tidak dimunculkan agar klien tidak bingung mana yang harus dipakai.
 func viewToResponse(v *booking.BookingView, role string) bookingResponse {
 	resp := bookingResponse{
-		ID:          v.ID,
-		Status:      v.Status,
-		Topic:       v.Topic,
-		Description: v.Description,
-		CreatedAt:   v.CreatedAt.Format(time.RFC3339),
+		ID:           v.ID,
+		Status:       v.Status,
+		Topic:        v.Topic,
+		Description:  v.Description,
+		CreatedAt:    v.CreatedAt.Format(time.RFC3339),
 		LecturerNote: v.LecturerNote,
 		Slot: slotRef{
 			ID:      v.SlotID,

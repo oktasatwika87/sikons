@@ -28,6 +28,10 @@ type bookingTestHelper struct {
 func buatServerUji(t *testing.T) *bookingTestHelper {
 	t.Helper()
 
+	if skipIfNoDB {
+		t.Skip("TEST_DATABASE_URL kosong")
+	}
+
 	cfg := cfgUji
 	if cfg.CampusTZ == nil {
 		cfg.CampusTZ = time.Local
