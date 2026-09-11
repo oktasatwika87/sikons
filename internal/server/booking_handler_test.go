@@ -1123,3 +1123,115 @@ func TestNoShowBooking_MahasiswaDitolak(t *testing.T) {
 		t.Errorf("status = %d, mau 403", w.Code)
 	}
 }
+
+// TestLecturerNoteMunculDiGetBooking menguji alur lengkap:
+// 1. booking diselesaikan dosen dengan lecturer_note
+// 2. GET /bookings sebagai mahasiswa harus mengembalikan lecturer_note
+// 3. GET /bookings sebagai dosen juga harus mengembalikan lecturer_note
+func TestLecturerNoteMunculDiGetBooking(t *testing.T) {
+	h := buatServerUji(t)
+	dosenID, tokenDosen := h.buatDosen()
+	mhsID, tokenMhs := h.buatMahasiswa()
+	slot := h.buatSlot(dosenID, -5*time.Hour)
+	bookingID := h.buatBooking(mhsID, slot)
+
+	// Selesaikan booking dengan catatan.
+	note := "Sesi produktif, mahasiswa perlu follow-up minggu depan"
+	reqBody := map[string]string{"lecturer_note": note}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("PATCH", "/api/v1/bookings/"+bookingID+"/complete",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tokenDosen)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("complete gagal: %d", w.Code)
+	}
+
+	// GET sebagai mahasiswa.
+	reqMhs := httptest.NewRequest("GET", "/api/v1/bookings", nil)
+	reqMhs.Header.Set("Authorization", "Bearer "+tokenMhs)
+	wMhs := httptest.NewRecorder()
+	h.router.ServeHTTP(wMhs, reqMhs)
+	if wMhs.Code != http.StatusOK {
+		t.Fatalf("mhs get gagal: %d", wMhs.Code)
+	}
+	var respMhs map[string]any
+	json.Unmarshal(wMhs.Body.Bytes(), &respMhs)
+	bookingsMhs := respMhs["bookings"].([]any)
+	var foundMhs bool
+	for _, b := range bookingsMhs {
+		bm := b.(map[string]any)
+		if bm["id"] == bookingID {
+			foundMhs = true
+			if bm["lecturer_note"] != note {
+				t.Errorf("mhs: lecturer_note = %q, mau %q", bm["lecturer_note"], note)
+			}
+		}
+	}
+	if !foundMhs {
+		t.Error("mhs: booking tidak ditemukan di daftar")
+	}
+
+	// GET sebagai dosen.
+	reqDosen := httptest.NewRequest("GET", "/api/v1/bookings", nil)
+	reqDosen.Header.Set("Authorization", "Bearer "+tokenDosen)
+	wDosen := httptest.NewRecorder()
+	h.router.ServeHTTP(wDosen, reqDosen)
+	if wDosen.Code != http.StatusOK {
+		t.Fatalf("dosen get gagal: %d", wDosen.Code)
+	}
+	var respDosen map[string]any
+	json.Unmarshal(wDosen.Body.Bytes(), &respDosen)
+	bookingsDosen := respDosen["bookings"].([]any)
+	var foundDosen bool
+	for _, b := range bookingsDosen {
+		bm := b.(map[string]any)
+		if bm["id"] == bookingID {
+			foundDosen = true
+			if bm["lecturer_note"] != note {
+				t.Errorf("dosen: lecturer_note = %q, mau %q", bm["lecturer_note"], note)
+			}
+		}
+	}
+	if !foundDosen {
+		t.Error("dosen: booking tidak ditemukan di daftar")
+	}
+}
+
+// TestLecturerNoteKosongUntukNonCompleted memastikan lecturer_note tidak muncul
+// di response untuk booking yang belum completed.
+func TestLecturerNoteKosongUntukNonCompleted(t *testing.T) {
+	h := buatServerUji(t)
+	dosenID, _ := h.buatDosen()
+	mhsID, tokenMhs := h.buatMahasiswa()
+	slot := h.buatSlot(dosenID, 24*time.Hour)
+
+	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
+		SlotID: slot, StudentID: mhsID, Topic: "Bimbingan",
+	})
+	if err != nil {
+		t.Fatalf("booking gagal: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/bookings", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenMhs)
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("get gagal: %d", w.Code)
+	}
+
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	bookings := resp["bookings"].([]any)
+	for _, bk := range bookings {
+		bm := bk.(map[string]any)
+		if bm["id"] == b.Booking.ID {
+			if _, ada := bm["lecturer_note"]; ada {
+				t.Error("lecturer_note tidak boleh ada di booking yang belum completed")
+			}
+		}
+	}
+}

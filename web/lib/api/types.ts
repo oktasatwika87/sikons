@@ -95,6 +95,8 @@ export interface BookingResponse {
   slot: SlotRef;
   lecturer?: PersonRef;
   student?: PersonRef;
+  /** Catatan dosen setelah sesi selesai. Hanya ada di booking status completed. */
+  lecturer_note?: string;
 }
 
 export interface BookingListResponse {

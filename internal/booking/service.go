@@ -504,7 +504,8 @@ func listBookingsView(ctx context.Context, pool *pgxpool.Pool, role, userID, sta
 		       b.topic, coalesce(b.description, ''), b.status::text, b.created_at,
 		       sl.start_at, sl.end_at,
 		       u.full_name, coalesce(lp.department, '') AS department,
-		       '' AS student_full_name, '' AS student_identity
+		       '' AS student_full_name, '' AS student_identity,
+		       coalesce(b.lecturer_note, '') AS lecturer_note
 		FROM bookings b
 		JOIN slots sl ON sl.id = b.slot_id
 		JOIN users u ON u.id = sl.lecturer_id
@@ -528,6 +529,7 @@ func listBookingsView(ctx context.Context, pool *pgxpool.Pool, role, userID, sta
 			&v.SlotStart, &v.SlotEnd,
 			&v.LecturerFullName, &v.LecturerDepartment,
 			&v.StudentFullName, &v.StudentIdentity,
+			&v.LecturerNote,
 		); err != nil {
 			return nil, 0, fmt.Errorf("membaca booking: %w", err)
 		}
