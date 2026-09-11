@@ -102,14 +102,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          # Cache dinonaktifkan: runner mungkin punya state npmrc yang tidak
-          # terduga dengan ignore-scripts. Cache restore dari previous run
-          # yang gagal bisa membawa state yang salah.
-          # cache: "npm"
-          # cache-dependency-path: web/package-lock.json
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
 
       - name: Install dependensi
-        run: npm ci --ignore-scripts=false
+        run: set -o pipefail && npm ci --ignore-scripts=false
 
       - name: Type check
         run: npx tsc --noEmit
