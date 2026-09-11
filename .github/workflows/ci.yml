@@ -106,7 +106,13 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependensi
-        run: npm ci
+        run: |
+          echo "=== env check: ignore_scripts ==="
+          env | grep -i ignore || echo "(clean)"
+          echo "=== npm version ==="
+          npm --version
+          echo "=== running npm ci ==="
+          npm ci
 
       - name: Type check
         run: npx tsc --noEmit
