@@ -78,6 +78,7 @@ type BookingView struct {
 	LecturerDepartment string
 	StudentFullName    string
 	StudentIdentity    string
+	LecturerNote       string
 }
 
 // CreateResult adalah keluaran service.Create. Body berisi JSON yang SUDAH jadi
