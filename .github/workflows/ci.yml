@@ -211,15 +211,17 @@ jobs:
         uses: actions/checkout@v4
 
       # Salin PERSIS regex dari .git/hooks/pre-commit langkah 2. Perbedaan
-      # mekanis satu-satunya: hook memindai `git diff --cached` (staged
-      # untuk satu commit), CI memindai `git ls-files` (tracked penuh).
-      # Untuk push ke branch clean, himpunan ini sama.
+      # mekanis satu-satunya:
+      #   - hook memindai `git diff --cached` (staged untuk satu commit),
+      #     CI memindai `git ls-files` (tracked penuh).
+      #   - hook scan file per file dengan perl; CI pakai `git grep -I -P`
+      #     yang sudah skip binary otomatis (`-I`). Tanpa `-I`, scanner
+      #     bisa menuduh file biner (favicon.ico, gambar, font) yang
+      #     byte-bytenya kebetulan jatuh di rentang CJK. Untuk push ke
+      #     branch clean, himpunan ini pada dasarnya sama.
       - name: non-latin-script-check
         run: |
-          ASING=$(git ls-files | while read -r f; do
-              [ -f "$f" ] || continue
-              perl -CSD -ne 'print "'"$f"':$.: $_" if /[\x{3000}-\x{30ff}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}\x{ff00}-\x{ffef}\x{1f300}-\x{1faff}]/' "$f" 2>/dev/null
-          done)
+          ASING=$(git grep -n -I -P '[\x{3000}-\x{30ff}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}\x{ff00}-\x{ffef}\x{1f300}-\x{1faff}]' -- . 2>/dev/null || true)
           if [ -n "$ASING" ]; then
             echo "Ditemukan aksara non-Latin / emoji di file kode:"
             echo "$ASING" | sed 's/^/  /'
