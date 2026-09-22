@@ -106,7 +106,7 @@ func TestReconcile_AturanSeninSlot30Menit(t *testing.T) {
 	defer HapusAturanDosen(t, dosen)
 
 	campusTZ, _ := time.LoadLocation("Asia/Jakarta")
-	monday := time.Date(2026, 9, 14, 0, 0, 0, 0, campusTZ)
+	monday := nextMondayAfter(time.Now())
 	from := time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, campusTZ)
 	to := from.AddDate(0, 0, 1)
 
@@ -171,7 +171,7 @@ func TestReconcile_Idempoten(t *testing.T) {
 	defer HapusAturanDosen(t, dosen)
 
 	campusTZ, _ := time.LoadLocation("Asia/Jakarta")
-	monday := time.Date(2026, 9, 14, 0, 0, 0, 0, campusTZ)
+	monday := nextMondayAfter(time.Now())
 	from := time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, campusTZ)
 	to := from.AddDate(0, 0, 1)
 
@@ -218,7 +218,7 @@ func TestReconcile_PengecualianFullDay(t *testing.T) {
 	defer HapusAturanDosen(t, dosen)
 
 	campusTZ, _ := time.LoadLocation("Asia/Jakarta")
-	monday := time.Date(2026, 9, 14, 0, 0, 0, 0, campusTZ)
+	monday := nextMondayAfter(time.Now())
 	from := time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, campusTZ)
 	to := from.AddDate(0, 0, 1)
 
@@ -255,7 +255,7 @@ func TestReconcile_PengecualianPartial(t *testing.T) {
 	defer HapusAturanDosen(t, dosen)
 
 	campusTZ, _ := time.LoadLocation("Asia/Jakarta")
-	monday := time.Date(2026, 9, 14, 0, 0, 0, 0, campusTZ)
+	monday := nextMondayAfter(time.Now())
 	from := time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, campusTZ)
 	to := from.AddDate(0, 0, 1)
 
@@ -293,7 +293,7 @@ func TestReconcile_AturanDinonaktifkan(t *testing.T) {
 	defer HapusAturanDosen(t, dosen)
 
 	campusTZ, _ := time.LoadLocation("Asia/Jakarta")
-	monday := time.Date(2026, 9, 14, 0, 0, 0, 0, campusTZ)
+	monday := nextMondayAfter(time.Now())
 	from := time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, campusTZ)
 	to := from.AddDate(0, 0, 1)
 
@@ -341,7 +341,7 @@ func TestReconcile_SlotSudahDipesanLaluDiperkecil(t *testing.T) {
 	defer HapusAturanDosen(t, dosen)
 
 	campusTZ, _ := time.LoadLocation("Asia/Jakarta")
-	monday := time.Date(2026, 9, 14, 0, 0, 0, 0, campusTZ)
+	monday := nextMondayAfter(time.Now())
 	from := time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, campusTZ)
 	to := from.AddDate(0, 0, 1)
 
@@ -540,7 +540,7 @@ func TestReconcile_BookingYangMasihSahTidakDisentuh(t *testing.T) {
 	defer HapusAturanDosen(t, dosen)
 
 	campusTZ, _ := time.LoadLocation("Asia/Jakarta")
-	monday := time.Date(2026, 9, 14, 0, 0, 0, 0, campusTZ)
+	monday := nextMondayAfter(time.Now())
 	from := time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, campusTZ)
 	to := from.AddDate(0, 0, 1)
 	_, err := poolUji.Exec(context.Background(), `
@@ -670,7 +670,7 @@ func TestReconcile_WithdrawnSlotTidakBisaDipesan(t *testing.T) {
 	defer HapusAturanDosen(t, dosen)
 
 	campusTZ, _ := time.LoadLocation("Asia/Jakarta")
-	monday := time.Date(2026, 9, 14, 0, 0, 0, 0, campusTZ)
+	monday := nextMondayAfter(time.Now())
 	from := time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, campusTZ)
 	to := from.AddDate(0, 0, 1)
 

@@ -7,7 +7,9 @@ on:
     branches: [main]
 
 env:
-  # PAKAI NAMA YANG SAMA DENGAN MAKEFILE — variabel ini dibaca oleh `make test`.
+  # Port 5432 (port default Postgres di dalam service container runner),
+  # BUKAN 5433 seperti port Postgres lokal di laptop. Service container
+  # memetakan port kontainer ke localhost dengan port kontainer = 5432.
   TEST_DATABASE_URL: "postgres://postgres:postgres@localhost:5432/sikons_test?sslmode=disable"
 
 jobs:
@@ -22,7 +24,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRURES_DB: sikons_test
+          POSTGRES_DB: sikons_test
         ports:
           - 5432:5432
         options: >-
@@ -32,7 +34,7 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Kode sumber
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Go
@@ -41,26 +43,27 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # gofmt — gagal kalau ada file belum diformat.
-      - name: Periksa format
+      - name: gofmt check
+        # `gofmt -l .` mencantumkan path file yang BELUM diformat. Kalau output
+        # kosong, semuanya rapi. Lebih ringan daripada `gofmt -d` (diff) karena
+        # kita hanya butuh tahu ada/tidak file yang perlu diformat ulang.
         run: |
           if [ -n "$(gofmt -l .)" ]; then
-            echo "File belum diformat gofmt:"
+            echo "File berikut belum diformat gofmt:"
             gofmt -l .
             exit 1
           fi
 
-      - name: Analisis statis
+      - name: go vet
         run: go vet ./...
 
-      - name: Build
+      - name: go build
         run: go build ./...
 
-      # Siapkan database dan jalankan migrasi.
-      # migrate CLI tidak tersedia di repo apt, jadi diunduh langsung dari
-      # release GitHub. Versi dipinning sama dengan docker-compose.yml
-      # (migrate/migrate:v4.17.1) supaya perilaku migrasi lokal dan CI identik.
-      - name: Siapkan database uji
+      # Siapkan database uji. Sama persis seperti Makefile `make test-db`,
+      # TAPI lewat CLI langsung — bukan `docker compose run` — karena runner
+      # Linux tidak butuh Docker-in-Docker untuk service container.
+      - name: Setup database uji
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null 2>&1
           until pg_isready -h localhost -p 5432 -U postgres 2>/dev/null; do sleep 1; done
@@ -71,15 +74,99 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE sikons_test;" 2>/dev/null || true
           migrate -path=migrations -database="$TEST_DATABASE_URL" -verbose up
 
-      - name: Test dengan race detector
-        run: go test ./... -race -count=1
-
-      # Coverage bukan gate — hanya info di job summary.
-      - name: Ringkasan coverage
+      # Guard 1 — cegah hijau palsu kalau TEST_DATABASE_URL tidak di-set.
+      # env: di level workflow sudah mengisinya, tapi kalau env itu dihapus
+      # atau ditimpa oleh caller (workflow_call, secrets kosong, dsb.),
+      # TestMain di package integrasi akan os.Exit(0) diam-diam → CI tampak
+      # hijau tanpa satu pun test berjalan. Guard ini gagal cepat.
+      - name: Guard TEST_DATABASE_URL terisi
         run: |
-          go test ./... -coverprofile=coverage.out -count=1
-          go tool cover -func=coverage.out | tee "$GITHUB_STEP_SUMMARY"
-          rm coverage.out
+          if [ -z "${TEST_DATABASE_URL:-}" ]; then
+            echo "TEST_DATABASE_URL kosong; test integrasi akan os.Exit(0) tanpa menjalankan apa pun."
+            exit 1
+          fi
+          echo "TEST_DATABASE_URL=${TEST_DATABASE_URL}"
+
+      # Jalankan test dengan -v. Makefile `make test` tidak memakai -v, dan
+      # Mengubah Makefile hanya untuk CI akan membuat perbedaan antara
+      # perintah lokal dan CI — lebih buruk. Maka kita panggil `go test`
+      # langsung di sini, dengan argumen yang PERSIS sama dengan `make test`
+      # ditambah -v. Output di-tee ke file untuk Guard 2 & 3.
+      # `set -o pipefail` + exit ${PIPESTATUS[0]} memastikan exit code
+      # `go test` tidak hilang di pipeline `| tee`.
+      - name: Test integrasi + unit dengan race detector
+        run: |
+          set -o pipefail
+          go test ./... -race -count=1 -v 2>&1 | tee /tmp/test-output.log
+          exit "${PIPESTATUS[0]}"
+
+      # Guard 2 — assertion positif: setiap tes kritis HARUS muncul sebagai
+      # --- PASS di output. Kalau satu pun hilang, GAGAL. Alasannya:
+      #
+      # (a) Slotgen TestMain diam-diam os.Exit(0) kalau DB tidak bisa di-ping
+      #     (lihat internal/slotgen/integration_test.go) — tanpa guard ini,
+      #     job akan hijau walaupun tidak ada tes slotgen yang berjalan.
+      # (b) Tes-tes ini adalah yang membuktikan klaim utama project (anti
+      #     double-booking + idempotency + rotasi refresh + penguncian
+      #     Postgres). Menghilangkannya tanpa sengaja harus ditolak CI.
+      - name: Guard assertion tes kritis hadir sebagai PASS
+        run: |
+          OUT=/tmp/test-output.log
+          TES=(
+            "TestCreate_SeratusRequestParalelHanyaSatuYangMenang"
+            "TestCreate_SatuMahasiswaMenembakSepuluhSlotSekaligus"
+            "TestCancel_BarengReconcileTidakDeadlock"
+            "TestReminderConcurrencyVerify_SKIP_LOCKED"
+            "TestCreateBooking_HappyPath"
+            "TestCreateBooking_ConcurrencyDenganIdempotencyKey"
+            "TestRefresh_ParalelRefreshTokenSama"
+            "TestReconcile_AturanSeninSlot30Menit"
+            "TestGetSlots_SlotStartsInRangeButEndsAfterTo"
+          )
+          hilang=()
+          for t in "${TES[@]}"; do
+            # Pakai literal space sebagai anchor — go test -v SELALU menulis
+            # "--- PASS: <name> (<duration>)", jadi nama tes selalu diikuti
+            # spasi lalu "(<duration>)". Tanpa anchor eksplisit, prefix
+            # match bisa lolos ("TestCreate" cocok "TestCreate_X").
+            if ! grep -q "^--- PASS: ${t} " "$OUT"; then
+              hilang+=("$t")
+            fi
+          done
+          if [ ${#hilang[@]} -gt 0 ]; then
+            echo "Tes kritis berikut TIDAK memiliki baris '--- PASS:' di output:"
+            for t in "${hilang[@]}"; do
+              echo "  - $t"
+            done
+            exit 1
+          fi
+          echo "Semua tes kritis hadir sebagai PASS."
+
+      # Guard 3 — tolak output yang mengandung --- SKIP atau string
+      # 'dilewati' (dipakai beberapa TestMain saat DB kosong). Tes integrasi
+      # di project ini TIDAK BOLEH di-skip; kalau DB tidak tersedia,
+      # tes harus FAIL dengan exit code != 0, bukan diam-diam lewat.
+      - name: Guard tanpa SKIP atau dilewati
+        run: |
+          OUT=/tmp/test-output.log
+          if grep -q -E "^--- SKIP" "$OUT"; then
+            echo "Ada baris '--- SKIP:' di output tes:"
+            grep -E "^--- SKIP" "$OUT" | head -20
+            exit 1
+          fi
+          if grep -q -E "dilewati" "$OUT"; then
+            echo "Ada string 'dilewati' di output tes (kemungkinan TestMain diam-diam lewat):"
+            grep -E "dilewati" "$OUT" | head -20
+            exit 1
+          fi
+          echo "Tidak ada SKIP/dilewati."
+
+      # Coverage bukan gate — hanya info di job summary. Tes sudah divalidasi
+      # oleh Guard 1-3 di atas; coverage ditambahkan untuk visibilitas saja.
+      - name: Coverage ringkasan
+        run: |
+          go test ./... -coverprofile=/tmp/coverage.out -count=1
+          go tool cover -func=/tmp/coverage.out | tee "$GITHUB_STEP_SUMMARY"
 
   # ── Frontend ───────────────────────────────────────────────────────────────
   frontend:
@@ -90,24 +177,21 @@ jobs:
         working-directory: web
 
     steps:
-      - name: Kode sumber
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          # Cache dinonaktifkan: runner me-reuse cache dari previous run
-          # yang mungkin membawa state npm yang salah.
-          # Baseline minimal: cache off + npm ci polos.
-          # cache: "npm"
-          # cache-dependency-path: web/package-lock.json
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
 
       - name: Install dependensi
         run: npm ci
 
       - name: Type check
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Lint
         run: npm run lint
@@ -119,78 +203,36 @@ jobs:
         run: npm run build
 
   # ── Repo lint ──────────────────────────────────────────────────────────────
-  repo-integrity:
-    name: Repo integrity
+  repo-lint:
+    name: Repo lint
     runs-on: ubuntu-latest
-    # Working tree selalu bersih saat di-pull request, tapi step ini
-    # tetap jalan di push untuk menangkap masalah sejak awal.
     steps:
-      - name: Kode sumber
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Hook lokal (.git/hooks/pre-commit) memindai SEMUA tracked file
-      # tanpa pengecualian ekstensi. Tapi perl dalam mode -CSD (UTF-8 strict)
-      # akan FATAL pada byte yang bukan UTF-8 valid — file biner seperti
-      # favicon.ico akan menyebabkan "Malformed UTF-8 character (fatal)"
-      # dan exit 25, padahal hook asli tidak crash di file itu karena
-      # membacanya byte-stream (bukan UTF-8).
-      #
-      # Solusi: dalam satu program perl, cek dulu apakah file mengandung null
-      # byte (signature khas biner). Kalau ya, skip. Kalau tidak, scan UTF-8.
-      # Pendekatan ini portable (perl ada di ubuntu-latest dan macOS), tanpa
-      # dependency `file` atau `grep -P` (yang perilakunya beda antar OS),
-      # dan mempertahankan logika "scan semua file teks" yang konsisten
-      # dengan hook lokal.
-      - name: Periksa aksara non-Latin
+      # Salin PERSIS regex dari .git/hooks/pre-commit langkah 2. Perbedaan
+      # mekanis satu-satunya: hook memindai `git diff --cached` (staged
+      # untuk satu commit), CI memindai `git ls-files` (tracked penuh).
+      # Untuk push ke branch clean, himpunan ini sama.
+      - name: non-latin-script-check
         run: |
-          perl -CSD -e '
-            use strict;
-            use warnings;
-            my $gagal = 0;
-            open my $ls, "-|", "git", "ls-files" or die "git ls-files: $!";
-            while (my $file = <$ls>) {
-              chomp $file;
-              next unless -f $file;
-              open my $fh, "<:raw", $file or do {
-                warn "skip (tidak bisa dibuka): $file\n";
-                next;
-              };
-              my $content = do { local $/; <$fh> };
-              close $fh;
-              # Skip file biner (signature null byte) — perl UTF-8 strict
-              # akan fatal di sini, bukan ASCII artefak yang seharusnya.
-              next if $content =~ /\0/;
-              open my $th, "<:encoding(UTF-8)", \$content or die;
-              while (<$th>) {
-                if (/[\x{3000}-\x{30ff}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}\x{ff00}-\x{ffef}\x{1f300}-\x{1faff}]/) {
-                  print "$file:$.: $_";
-                  $gagal = 1;
-                }
-              }
-              close $th;
-            }
-            close $ls;
-            exit($gagal ? 1 : 0);
-          '
+          ASING=$(git ls-files | while read -r f; do
+              [ -f "$f" ] || continue
+              perl -CSD -ne 'print "'"$f"':$.: $_" if /[\x{3000}-\x{30ff}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}\x{ff00}-\x{ffef}\x{1f300}-\x{1faff}]/' "$f" 2>/dev/null
+          done)
+          if [ -n "$ASING" ]; then
+            echo "Ditemukan aksara non-Latin / emoji di file kode:"
+            echo "$ASING" | sed 's/^/  /'
+            exit 1
+          fi
 
-      - name: Periksa file perkakas eksternal
+      # Salin PERSIS regex dari .git/hooks/pre-commit langkah 1.
+      # Termasuk `^\.github/copilot` yang sebelumnya tidak ada di workflow.
+      - name: tracked-config-check
         run: |
-          # Pakai awk (bukan grep) untuk avoid pipe exit code issue di runner.
-          # Cek: ./, .cursor/, .aider (dengan boundary yang tepat),
-          # .MD, dan AGENTS.MD (case-insensitive).
-          git ls-files > /tmp/git_files.txt
-          MATCHED=$(awk '
-            tolower($0) ~ /^\.\// ||
-            tolower($0) ~ /^\.cursor\// ||
-            tolower($0) ~ /^\.aider($|\/)/ ||
-            tolower($0) == "." ||
-            tolower($0) == ".cursor" ||
-            tolower($0) == ".aider" ||
-            tolower($0) == ".md" ||
-            tolower($0) ~ /agents\.md$/ { print }
-          ' /tmp/git_files.txt)
-          if [ -n "$MATCHED" ]; then
-            echo "ERROR: file terlarang ditemukan:"
-            echo "$MATCHED"
+          BERMASALAH=$(git ls-files | grep -i -E '^\.md$|^\./|^\.cursor/|^\.aider|AGENTS\.md|^\.github/copilot')
+          if [ -n "$BERMASALAH" ]; then
+            echo "File konfigurasi tooling eksternal ikut dilacak git:"
+            echo "$BERMASALAH" | sed 's/^/  /'
             exit 1
           fi
