@@ -14,6 +14,7 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/lib/auth/AuthContext";
+import { anonymousHandlers } from "@/lib/msw/session";
 
 const mockRouter = {
   push: vi.fn(),
@@ -59,12 +60,7 @@ interface RequestLog {
  */
 function setupLecturersHandler(log: RequestLog[]) {
   server.use(
-    http.get(`${BASE_URL}/auth/me`, () =>
-      HttpResponse.json(
-        { error: { code: "UNAUTHORIZED", message: "" } },
-        { status: 401 }
-      )
-    ),
+    ...anonymousHandlers(),
     http.get(`${BASE_URL}/lecturers`, ({ request }) => {
       log.push({ url: request.url, method: request.method });
       return HttpResponse.json({

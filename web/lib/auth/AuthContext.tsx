@@ -35,7 +35,13 @@ interface AuthContextValue {
    * Mengembalikan `{ ok }` supaya pemanggil tidak perlu membaca `auth.status`
    * lewat closure (yang stale karena di-memoize dengan useCallback).
    */
-  refreshTokens: () => Promise<{ ok: boolean }>;
+  refreshTokens: () => Promise<RefreshResult>;
+}
+
+/** Hasil refresh. `accessToken` terisi kalau ok, dipakai bootstrap untuk /me. */
+export interface RefreshResult {
+  ok: boolean;
+  accessToken?: string;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -58,12 +64,18 @@ async function callRefresh(): Promise<RefreshResponse> {
   });
 }
 
+// Backend mendaftarkan logout sebagai POST (internal/server/server.go).
+// Dulu di sini DELETE, jadi backend membalas 405: refresh token tidak pernah
+// dicabut dan cookie-nya tidak pernah dihapus.
 async function callLogout(): Promise<void> {
-  return apiFetch<void>("/auth/logout", { method: "DELETE" });
+  return apiFetch<void>("/auth/logout", { method: "POST" });
 }
 
-async function callMe(): Promise<{ user: UserResponse }> {
-  return apiFetch<{ user: UserResponse }>("/auth/me");
+// GET /me butuh access token di header. Rute /auth/me tidak ada di backend.
+async function callMe(accessToken: string): Promise<{ user: UserResponse }> {
+  return apiFetch<{ user: UserResponse }>("/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 }
 
 /** ------------------------------------------------------------------ AuthProvider */
@@ -86,7 +98,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * saat refresh belum selesai akan await promise yang sama, bukan memulai
    * refresh baru.
    */
-  const refreshInFlight = useRef<Promise<{ ok: boolean }> | null>(null);
+  const refreshInFlight = useRef<Promise<RefreshResult> | null>(null);
 
   /** Perbarui state dari respons login. */
   const applyLogin = useCallback(
@@ -123,12 +135,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * pakai useCallback.
    */
   const refreshTokens = useCallback(
-    async (): Promise<{ ok: boolean }> => {
+    async (): Promise<RefreshResult> => {
       if (refreshInFlight.current) {
         return refreshInFlight.current;
       }
 
-      const promise = (async (): Promise<{ ok: boolean }> => {
+      const promise = (async (): Promise<RefreshResult> => {
         try {
           const data = await callRefresh();
           setAuth((prev) => ({
@@ -136,7 +148,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             accessToken: data.access_token,
             expiresAt: new Date(data.expires_at),
           }));
-          return { ok: true };
+          return { ok: true, accessToken: data.access_token };
         } catch (err: unknown) {
           // 409 → tunggu sebentar lalu retry sekali
           const is409 =
@@ -154,7 +166,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 accessToken: data.access_token,
                 expiresAt: new Date(data.expires_at),
               }));
-              return { ok: true };
+              return { ok: true, accessToken: data.access_token };
             } catch {
               setAnonymous();
               return { ok: false };
@@ -193,7 +205,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [setAnonymous]);
   /** ----------------------------------------------------------------
-   * Bootstrap: coba /auth/me untuk dapat token yang sudah ada di cookie.
+   * Bootstrap: pulihkan sesi dari cookie refresh.
+   *
+   * Access token cuma disimpan di memori, jadi selalu hilang saat halaman
+   * dimuat ulang. Yang bertahan hanya cookie refresh (httpOnly, path
+   * /api/v1/auth), maka urutannya: POST /auth/refresh dulu untuk dapat
+   * access token baru, lalu GET /me dengan token itu untuk data user.
+   *
+   * Versi lama memanggil GET /auth/me, rute yang tidak pernah ada di backend,
+   * sehingga setiap reload berakhir anonymous dan pengguna terlempar ke
+   * /login walau cookie-nya masih sah.
    *
    * 401 saat bootstrap = kondisi normal "belum login" — BUKAN error.
    * Jangan pernah set console.error di sini.
@@ -201,28 +222,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     let cancelled = false;
 
-    callMe()
-      .then(({ user }) => {
+    (async () => {
+      // refreshTokens sudah single-flight dan sudah set anonymous sendiri
+      // kalau gagal final, jadi cukup berhenti di sini.
+      const r = await refreshTokens();
+      if (cancelled || !r.ok || !r.accessToken) return;
+      try {
+        const { user } = await callMe(r.accessToken);
         if (cancelled) return;
-        // /auth/me tidak kasih token/expires, jadi bootstrap dengan
-        // expiresAt null — refresh proaktif akan aktif setelah request
-        // pertama (useApiFetch) yang kena 401.
-        setAuth({
-          user,
-          accessToken: null,
-          expiresAt: null,
-          status: "authenticated",
-        });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setAnonymous();
-      });
+        setAuth((prev) => ({ ...prev, user, status: "authenticated" }));
+      } catch {
+        if (!cancelled) setAnonymous();
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [setAnonymous]);
+  }, [refreshTokens, setAnonymous]);
 
   /** ----------------------------------------------------------------
    * Refresh proaktif terjadwal.

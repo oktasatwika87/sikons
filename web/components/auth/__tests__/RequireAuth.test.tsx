@@ -1,9 +1,10 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { http, HttpResponse } from "msw";
+import { http } from "msw";
 import { describe, expect, it, beforeAll, afterEach, afterAll, vi } from "vitest";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { setupServer } from "msw/node";
+import { sessionHandlers, anonymousHandlers } from "@/lib/msw/session";
 
 const BASE_URL = "http://localhost:8080/api/v1";
 const server = setupServer();
@@ -26,7 +27,7 @@ describe("RequireAuth", () => {
   it('status "loading": tampilkan Memuat, ProtectedContent tidak tampil', async () => {
     // /auth/me tidak pernah resolve -> auth.status = loading selamanya
     server.use(
-      http.get(`${BASE_URL}/auth/me`, () => new Promise(() => {}))
+      http.post(`${BASE_URL}/auth/refresh`, () => new Promise(() => {}))
     );
 
     render(
@@ -45,12 +46,7 @@ describe("RequireAuth", () => {
 
   it('status "anonymous": ProtectedContent tidak tampil (redirect ke /login)', async () => {
     server.use(
-      http.get(`${BASE_URL}/auth/me`, () =>
-        HttpResponse.json(
-          { error: { code: "UNAUTHORIZED", message: "" } },
-          { status: 401 }
-        )
-      )
+      ...anonymousHandlers()
     );
 
     render(
@@ -70,18 +66,16 @@ describe("RequireAuth", () => {
 
   it('status "authenticated": ProtectedContent tampil', async () => {
     server.use(
-      http.get(`${BASE_URL}/auth/me`, () =>
-        HttpResponse.json({
-          user: {
-            id: "u1",
-            email: "test@example.com",
-            full_name: "Test User",
-            role: "student",
-            is_active: true,
-            created_at: new Date().toISOString(),
-          },
-        })
-      )
+      ...sessionHandlers({
+        user: {
+          id: "u1",
+          email: "test@example.com",
+          full_name: "Test User",
+          role: "student",
+          is_active: true,
+          created_at: new Date().toISOString(),
+        },
+      })
     );
 
     render(

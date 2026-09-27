@@ -13,6 +13,8 @@ import { setupServer } from "msw/node";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import KetersediaanPage from "@/app/ketersediaan/page";
+import { sessionHandlers } from "@/lib/msw/session";
+import type { UserResponse } from "@/lib/api/types";
 
 // Mock next/navigation SEBELUM import component lain
 const mockRouter = {
@@ -34,26 +36,24 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
-/** Handler bootstrap /me — role lecturer supaya nav tampilkan link ketersediaan. */
-function meHandler(overrides?: { id?: string; role?: string }) {
-  return http.get(`${BASE_URL}/auth/me`, () =>
-    HttpResponse.json({
-      user: {
-        id: overrides?.id ?? "lecturer-1",
-        email: "dosen@example.com",
-        full_name: "Dr. Dosen",
-        role: overrides?.role ?? "lecturer",
-        is_active: true,
-        created_at: new Date().toISOString(),
-      },
-    })
-  );
+/** Handler bootstrap sesi — role lecturer supaya nav tampilkan link ketersediaan. */
+function meHandler(overrides?: { id?: string; role?: UserResponse["role"] }) {
+  return sessionHandlers({
+    user: {
+      id: overrides?.id ?? "lecturer-1",
+      email: "dosen@example.com",
+      full_name: "Dr. Dosen",
+      role: overrides?.role ?? "lecturer",
+      is_active: true,
+      created_at: new Date().toISOString(),
+    },
+  });
 }
 
 /** Rules handler — daftar kosong. */
 function emptyRulesHandler() {
   return http.get(`${BASE_URL}/availability-rules`, () =>
-    HttpResponse.json([])
+    HttpResponse.json({ rules: [] })
   );
 }
 
@@ -61,7 +61,7 @@ function emptyRulesHandler() {
 function emptyExceptionsHandler() {
   return http.get(`${BASE_URL}/availability-exceptions`, ({ request }) => {
     const url = new URL(request.url);
-    return HttpResponse.json([]);
+    return HttpResponse.json({ exceptions: [] });
   });
 }
 
@@ -84,7 +84,7 @@ function renderPage() {
 describe("/ketersediaan page", () => {
   it("renders rules and exceptions sections", async () => {
     server.use(
-      meHandler(),
+      ...meHandler(),
       emptyRulesHandler(),
       emptyExceptionsHandler()
     );
@@ -100,7 +100,7 @@ describe("/ketersediaan page", () => {
   it("summary panel appears with bookings_cancelled > 0 after creating rule", async () => {
     let callCount = 0;
     server.use(
-      meHandler(),
+      ...meHandler(),
       emptyRulesHandler(),
       emptyExceptionsHandler(),
       http.post(`${BASE_URL}/availability-rules`, () => {
@@ -121,7 +121,7 @@ describe("/ketersediaan page", () => {
       }),
       // After mutation, re-fetch returns the new rule
       http.get(`${BASE_URL}/availability-rules`, () =>
-        HttpResponse.json([
+        HttpResponse.json({ rules: [
           {
             id: "new-rule-id",
             lecturer_id: "lecturer-1",
@@ -134,7 +134,7 @@ describe("/ketersediaan page", () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
-        ])
+        ] })
       )
     );
 
@@ -169,9 +169,9 @@ describe("/ketersediaan page", () => {
   it("summary panel appears with bookings_cancelled > 0 after ending rule", async () => {
     let callCount = 0;
     server.use(
-      meHandler(),
+      ...meHandler(),
       http.get(`${BASE_URL}/availability-rules`, () =>
-        HttpResponse.json([
+        HttpResponse.json({ rules: [
           {
             id: "rule-1",
             lecturer_id: "lecturer-1",
@@ -184,7 +184,7 @@ describe("/ketersediaan page", () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
-        ])
+        ] })
       ),
       emptyExceptionsHandler(),
       http.patch(`${BASE_URL}/availability-rules/rule-1`, () => {
@@ -201,7 +201,7 @@ describe("/ketersediaan page", () => {
       }),
       // After mutation, re-fetch returns updated rule
       http.get(`${BASE_URL}/availability-rules`, () =>
-        HttpResponse.json([
+        HttpResponse.json({ rules: [
           {
             id: "rule-1",
             lecturer_id: "lecturer-1",
@@ -215,7 +215,7 @@ describe("/ketersediaan page", () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
-        ])
+        ] })
       )
     );
 
@@ -243,7 +243,7 @@ describe("/ketersediaan page", () => {
 
   it("ATURAN_BENTROK -> shows specific error message", async () => {
     server.use(
-      meHandler(),
+      ...meHandler(),
       emptyRulesHandler(),
       emptyExceptionsHandler(),
       http.post(`${BASE_URL}/availability-rules`, () =>
@@ -288,7 +288,7 @@ describe("/ketersediaan page", () => {
 
   it("shows summary with zero bookings_cancelled without destructive styling", async () => {
     server.use(
-      meHandler(),
+      ...meHandler(),
       emptyRulesHandler(),
       emptyExceptionsHandler(),
       http.post(`${BASE_URL}/availability-rules`, () =>
@@ -307,7 +307,7 @@ describe("/ketersediaan page", () => {
         )
       ),
       http.get(`${BASE_URL}/availability-rules`, () =>
-        HttpResponse.json([
+        HttpResponse.json({ rules: [
           {
             id: "new-rule-id",
             lecturer_id: "lecturer-1",
@@ -320,7 +320,7 @@ describe("/ketersediaan page", () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
-        ])
+        ] })
       )
     );
 

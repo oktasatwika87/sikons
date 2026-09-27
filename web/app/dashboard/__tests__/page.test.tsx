@@ -1,271 +1,177 @@
 /**
- * Test alur tandakan selesai di halaman /dashboard.
+ * Test halaman /dashboard yang asli (sebelumnya test ini merender salinan
+ * dashboard buatan sendiri di dalam file test, jadi tidak menguji kode
+ * produksi sama sekali).
  *
- * Test: submit tandakan selesai dengan catatan → booking dipindahkan
- * dari bucket yang benar setelah query invalidated.
+ * Yang dicek:
+ *  - tandai selesai mengirim PATCH berisi catatan, dialog tertutup, dan
+ *    booking hilang dari daftar setelah query di-refetch,
+ *  - catatan kosong tidak ikut dikirim,
+ *  - error dari PATCH no-show tampil di dialog, bukan hilang diam-diam.
  */
-import { describe, expect, it, beforeAll, afterEach, afterAll } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { http, HttpResponse } from "msw";
-import { server, resetBookingStore } from "@/lib/msw";
-import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
+import { describe, expect, it, beforeAll, afterEach, afterAll, vi } from "vitest";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { sessionHandlers } from "@/lib/msw/session";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/dashboard",
+}));
+
+const BASE_URL = "http://localhost:8080/api/v1";
+const server = setupServer();
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
-afterEach(() => {
-  server.resetHandlers();
-  resetBookingStore();
-});
+afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
-// ------------------------------------------------------------------ Test data
+// Impor SETELAH vi.mock supaya RequireAuth dapat router palsu.
+const { default: DashboardPage } = await import("@/app/dashboard/page");
+const { AuthProvider } = await import("@/lib/auth/AuthContext");
 
-const mockBookings = [
-  {
-    id: "booking-1",
+const JAM = 60 * 60 * 1000;
+
+function buatBooking(id: string, topic: string, mulaiDariSekarangMs: number) {
+  const start = new Date(Date.now() + mulaiDariSekarangMs);
+  return {
+    id,
     status: "confirmed",
-    topic: "Bimbingan skripsi",
-    description: "Tentang proposal",
-    created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    slot: {
-      id: "slot-1",
-      start_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(), // 1 jam lalu
-      end_at: new Date(Date.now() - 60 * 60 * 1000 + 30 * 60 * 1000).toISOString(),
-    },
-    student: {
-      id: "student-1",
-      full_name: "Budi Santoso",
-    },
-  },
-  {
-    id: "booking-2",
-    status: "confirmed",
-    topic: "Konsultasi akhir",
+    topic,
     description: "",
-    created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+    created_at: new Date(Date.now() - 48 * JAM).toISOString(),
+    lecturer_note: null,
     slot: {
-      id: "slot-2",
-      start_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(), // 48 jam dari sekarang
-      end_at: new Date(Date.now() + 48 * 60 * 60 * 1000 + 30 * 60 * 1000).toISOString(),
+      id: `slot-${id}`,
+      start_at: start.toISOString(),
+      end_at: new Date(start.getTime() + 30 * 60 * 1000).toISOString(),
     },
-    student: {
-      id: "student-2",
-      full_name: "Ani Wijaya",
-    },
-  },
-];
+    student: { id: `mhs-${id}`, full_name: "Budi Santoso", identity_number: "2206123456" },
+  };
+}
 
-// ------------------------------------------------------------------ Mock server
+interface Rekaman {
+  completeBodies: Record<string, unknown>[];
+}
 
-let completeCalled = false;
-let completeNote = "";
-
-function setupDashboardHandlers() {
-  completeCalled = false;
-  completeNote = "";
+function setupHandlers(): Rekaman {
+  const rekaman: Rekaman = { completeBodies: [] };
+  // Booking yang sudah lewat 1 jam: masuk bucket "Perlu Ditindaklanjuti".
+  let confirmed = [buatBooking("b1", "Bimbingan skripsi", -JAM)];
 
   server.use(
-    http.get(`${BASE_URL}/auth/me`, () =>
-      HttpResponse.json({
-        user: {
-          id: "lecturer-1",
-          email: "dosen@example.com",
-          full_name: "Dr. Dosen",
-          role: "lecturer",
-          is_active: true,
-          created_at: new Date().toISOString(),
-        },
-      })
-    ),
+    ...sessionHandlers({
+      user: {
+        id: "dosen-1",
+        email: "dosen@example.com",
+        full_name: "Dr. Dosen",
+        role: "lecturer",
+        is_active: true,
+        created_at: new Date().toISOString(),
+      },
+    }),
     http.get(`${BASE_URL}/bookings`, () =>
       HttpResponse.json({
-        bookings: mockBookings,
+        bookings: confirmed,
         page: 1,
         per_page: 100,
-        total: mockBookings.length,
+        total: confirmed.length,
       })
     ),
     http.patch(`${BASE_URL}/bookings/:id/complete`, async ({ params, request }) => {
-      completeCalled = true;
-      if (request.headers.get("Content-Type")?.includes("application/json")) {
-        const body = await request.json() as { lecturer_note?: string };
-        completeNote = body.lecturer_note ?? "";
-      }
-
-      // Return completed booking
+      const body = (await request.json()) as Record<string, unknown>;
+      rekaman.completeBodies.push(body);
+      const booking = confirmed.find((b) => b.id === params.id)!;
+      confirmed = confirmed.filter((b) => b.id !== params.id);
       return HttpResponse.json({
-        ...mockBookings[0],
+        ...booking,
         status: "completed",
-        completed_at: new Date().toISOString(),
-        lecturer_note: completeNote || null,
+        lecturer_note: (body.lecturer_note as string | undefined) ?? null,
       });
     }),
     http.patch(`${BASE_URL}/bookings/:id/no-show`, () =>
-      HttpResponse.json({
-        ...mockBookings[0],
-        status: "no_show",
-        marked_at: new Date().toISOString(),
-      })
+      HttpResponse.json(
+        {
+          error: {
+            code: "BOOKING_ALREADY_FINALIZED",
+            message: "Booking ini sudah difinalisasi.",
+          },
+        },
+        { status: 409 }
+      )
     )
   );
+  return rekaman;
 }
 
-// ------------------------------------------------------------------ Helper components
-
-function ReadyChildren({ children }: { children: ReactNode }) {
-  const { auth } = useAuth();
-  if (auth.status === "loading") return null;
-  return <>{children}</>;
-}
-
-// ------------------------------------------------------------------ Inline component untuk test
-
-function DashboardWithDialog() {
-  const [completeTarget, setCompleteTarget] = useState<{ id: string; topic: string; student?: { full_name: string } } | null>(null);
-  const [completeNote, setCompleteNote] = useState("");
-  const [completed, setCompleted] = useState<string[]>([]);
-
-  const handleCompleteClick = (id: string, topic: string, student?: { full_name: string }) => {
-    setCompleteTarget({ id, topic, student });
-    setCompleteNote("");
-  };
-
-  const handleCompleteConfirm = () => {
-    if (!completeTarget) return;
-    // Simulasi sukses
-    setCompleted([...completed, completeTarget.id]);
-    setCompleteTarget(null);
-  };
-
-  return (
-    <div>
-      <h1>Dashboard</h1>
-
-      {/* Needs Follow Up Section */}
-      <section>
-        <h2>Perlu Ditindaklanjuti</h2>
-        {mockBookings
-          // eslint-disable-next-line react-hooks/purity
-          .filter((b) => new Date(b.slot.start_at).getTime() < Date.now())
-          .map((booking) => (
-            <div key={booking.id} data-testid={`booking-${booking.id}`}>
-              <p>{booking.topic}</p>
-              <p>{booking.student.full_name}</p>
-              {!completed.includes(booking.id) && (
-                <button onClick={() => handleCompleteClick(booking.id, booking.topic, booking.student)}>
-                  Tandai Selesai
-                </button>
-              )}
-              {completed.includes(booking.id) && <span data-testid="completed-badge">Selesai</span>}
-            </div>
-          ))}
-      </section>
-
-      {/* Complete Dialog */}
-      {completeTarget && (
-        <div data-testid="complete-dialog">
-          <p>Tandai Selesai: {completeTarget.topic}</p>
-          <textarea
-            data-testid="note-input"
-            value={completeNote}
-            onChange={(e) => setCompleteNote(e.target.value)}
-            maxLength={2000}
-          />
-          <p>{completeNote.length}/2000</p>
-          <p>Catatan tidak bisa diubah setelah disimpan.</p>
-          <button onClick={handleCompleteConfirm}>Simpan</button>
-          <button onClick={() => setCompleteTarget(null)}>Batal</button>
-        </div>
-      )}
-    </div>
+function renderDashboard() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <DashboardPage />
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
 
-// ------------------------------------------------------------------ Tests
-
-import { useState } from "react";
-
-describe("dashboard complete flow", () => {
-  it("submit tandakan selesai dengan catatan → booking ditandai selesai", async () => {
-    setupDashboardHandlers();
+describe("/dashboard — tandai selesai", () => {
+  it("mengirim catatan, menutup dialog, dan booking hilang dari daftar", async () => {
+    const rekaman = setupHandlers();
     const user = userEvent.setup();
+    renderDashboard();
 
-    render(
-      <AuthProvider>
-        <ReadyChildren>
-          <DashboardWithDialog />
-        </ReadyChildren>
-      </AuthProvider>
+    await screen.findByText("Bimbingan skripsi");
+    await user.click(screen.getByRole("button", { name: "Tandai Selesai" }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText("Catatan (opsional)"),
+      "Perlu revisi bab 2"
     );
+    expect(within(dialog).getByText("18/2000 karakter")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Simpan" }));
 
-    // Tunggu sampai booking list muncul
-    await waitFor(() => {
-      expect(screen.getByText("Bimbingan skripsi")).toBeInTheDocument();
-    });
-
-    // Klik tombol Tandai Selesai
-    const completeButton = screen.getByRole("button", { name: "Tandai Selesai" });
-    await user.click(completeButton);
-
-    // Dialog harus muncul
-    await waitFor(() => {
-      expect(screen.getByTestId("complete-dialog")).toBeInTheDocument();
-    });
-
-    // Ketik catatan
-    const noteInput = screen.getByTestId("note-input");
-    await user.clear(noteInput);
-    await user.type(noteInput, "Sesi produktif, mahasiswa perlu follow-up");
-
-    // Verifikasi counter karakter
-    expect(screen.getByText(/41\/2000/)).toBeInTheDocument();
-
-    // Klik Simpan
-    const saveButton = screen.getByRole("button", { name: "Simpan" });
-    await user.click(saveButton);
-
-    // Dialog harus tertutup
-    await waitFor(() => {
-      expect(screen.queryByTestId("complete-dialog")).not.toBeInTheDocument();
-    });
-
-    // Booking harus ditandai selesai
-    expect(screen.getByTestId("completed-badge")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(rekaman.completeBodies).toEqual([{ lecturer_note: "Perlu revisi bab 2" }]);
+    await waitFor(() =>
+      expect(screen.queryByText("Bimbingan skripsi")).not.toBeInTheDocument()
+    );
   });
 
-  it("catatan opsional → bisa disimpan kosong", async () => {
-    setupDashboardHandlers();
+  it("catatan kosong tidak ikut dikirim", async () => {
+    const rekaman = setupHandlers();
     const user = userEvent.setup();
+    renderDashboard();
 
-    render(
-      <AuthProvider>
-        <ReadyChildren>
-          <DashboardWithDialog />
-        </ReadyChildren>
-      </AuthProvider>
+    await screen.findByText("Bimbingan skripsi");
+    await user.click(screen.getByRole("button", { name: "Tandai Selesai" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Simpan" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(rekaman.completeBodies).toEqual([{}]);
+  });
+});
+
+describe("/dashboard — tidak hadir", () => {
+  it("penolakan dari backend tampil di dialog", async () => {
+    setupHandlers();
+    const user = userEvent.setup();
+    renderDashboard();
+
+    await screen.findByText("Bimbingan skripsi");
+    await user.click(screen.getByRole("button", { name: "Tidak Hadir" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Ya, Tidak Hadir" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Booking ini sudah difinalisasi."
     );
-
-    await waitFor(() => {
-      expect(screen.getByText("Bimbingan skripsi")).toBeInTheDocument();
-    });
-
-    const completeButton = screen.getByRole("button", { name: "Tandai Selesai" });
-    await user.click(completeButton);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("complete-dialog")).toBeInTheDocument();
-    });
-
-    // Langsung klik Simpan tanpa isi catatan
-    const saveButton = screen.getByRole("button", { name: "Simpan" });
-    await user.click(saveButton);
-
-    // Dialog harus tertutup
-    await waitFor(() => {
-      expect(screen.queryByTestId("complete-dialog")).not.toBeInTheDocument();
-    });
   });
 });

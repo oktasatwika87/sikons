@@ -26,9 +26,9 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
-/** Handler bootstrap /me — AuthProvider boot ke "authenticated" (accessToken null). */
+/** GET /me untuk bootstrap AuthProvider (setelah refresh pertama sukses). */
 function meHandler() {
-  return http.get(`${BASE_URL}/auth/me`, () =>
+  return http.get(`${BASE_URL}/me`, () =>
     HttpResponse.json({
       user: {
         id: "u1",
@@ -40,6 +40,26 @@ function meHandler() {
       },
     })
   );
+}
+
+/**
+ * POST /auth/refresh yang membedakan bootstrap dan refresh sesudahnya.
+ * Panggilan pertama selalu dari bootstrap AuthProvider (pulihkan sesi dari
+ * cookie) dan selalu sukses; `resolver` milik test baru dipakai mulai
+ * panggilan kedua, jadi hitungan di tiap test tetap bermakna.
+ */
+function refreshAfterBoot(resolver: Parameters<typeof http.post>[1]) {
+  let booted = false;
+  return http.post(`${BASE_URL}/auth/refresh`, (info) => {
+    if (!booted) {
+      booted = true;
+      return HttpResponse.json({
+        access_token: "boot-access",
+        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      });
+    }
+    return resolver(info);
+  });
 }
 
 /** Render children hanya setelah status !== "loading". */
@@ -106,7 +126,7 @@ describe("useApiFetch", () => {
 
     server.use(
       meHandler(),
-      http.post(`${BASE_URL}/auth/refresh`, () => {
+      refreshAfterBoot(() => {
         state.refreshCalls++;
         return HttpResponse.json({
           access_token: "new-access",
@@ -151,7 +171,7 @@ describe("useApiFetch", () => {
 
     server.use(
       meHandler(),
-      http.post(`${BASE_URL}/auth/refresh`, async () => {
+      refreshAfterBoot(async () => {
         state.refreshCalls++;
         // Delay supaya panggilan berikutnya benar-benar menunggu.
         await new Promise((r) => setTimeout(r, 30));
@@ -204,7 +224,7 @@ describe("useApiFetch", () => {
 
     server.use(
       meHandler(),
-      http.post(`${BASE_URL}/auth/refresh`, () => {
+      refreshAfterBoot(() => {
         state.refreshCalls++;
         // Panggilan pertama: simulasi "sedang ada refresh lain" → 409.
         if (state.refreshCalls === 1) {
@@ -256,7 +276,7 @@ describe("useApiFetch", () => {
 
     server.use(
       meHandler(),
-      http.post(`${BASE_URL}/auth/refresh`, () => {
+      refreshAfterBoot(() => {
         state.refreshCalls++;
         return HttpResponse.json(
           {

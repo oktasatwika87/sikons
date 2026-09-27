@@ -132,8 +132,13 @@ export function useAvailabilityRules() {
 
   return useQuery<AvailabilityRule[]>({
     queryKey: ["availability-rules"],
-    queryFn: () =>
-      fetchWithRetry<AvailabilityRule[]>("/availability-rules"),
+    // Backend membungkus daftar: { "rules": [...] }, bukan array polos.
+    queryFn: async () => {
+      const data = await fetchWithRetry<{ rules: AvailabilityRule[] | null }>(
+        "/availability-rules"
+      );
+      return data.rules ?? [];
+    },
     placeholderData: keepPreviousData,
   });
 }
@@ -143,10 +148,13 @@ export function useAvailabilityExceptions(from: string, to: string) {
 
   return useQuery<AvailabilityException[]>({
     queryKey: ["availability-exceptions", { from, to }],
-    queryFn: () =>
-      fetchWithRetry<AvailabilityException[]>(
-        `/availability-exceptions?from=${from}&to=${to}`
-      ),
+    // Sama: { "exceptions": [...] }. Backend lama bisa membalas null saat kosong.
+    queryFn: async () => {
+      const data = await fetchWithRetry<{
+        exceptions: AvailabilityException[] | null;
+      }>(`/availability-exceptions?from=${from}&to=${to}`);
+      return data.exceptions ?? [];
+    },
     placeholderData: keepPreviousData,
     enabled: !!from && !!to,
   });

@@ -48,6 +48,7 @@ function KonsultasiContent() {
   const cancelMutation = useCancelBooking();
 
   const handleCancelClick = (bookingId: string) => {
+    cancelMutation.reset();
     setCancelTarget(bookingId);
     setCancelReason("");
   };
@@ -188,6 +189,7 @@ function KonsultasiContent() {
         confirmText="Batalkan"
         variant="destructive"
         loading={cancelMutation.isPending}
+        error={cancelMutation.error?.message}
         onConfirm={handleCancelConfirm}
       />
     </div>

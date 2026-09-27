@@ -19,6 +19,8 @@ interface AlertDialogProps {
   onConfirm: () => void;
   variant?: "default" | "destructive";
   loading?: boolean;
+  /** Pesan gagal dari aksi terakhir; dialog tetap terbuka supaya bisa dibaca. */
+  error?: string | null;
 }
 
 export function AlertDialog({
@@ -31,6 +33,7 @@ export function AlertDialog({
   onConfirm,
   variant = "default",
   loading = false,
+  error = null,
 }: AlertDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -46,6 +49,15 @@ export function AlertDialog({
           </div>
           <DialogClose onClick={() => onOpenChange(false)} />
         </div>
+        {error && (
+          <p
+            role="alert"
+            className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+          >
+            {error}
+          </p>
+        )}
+
         <DialogFooter className="mt-6">
           <Button
             variant="outline"

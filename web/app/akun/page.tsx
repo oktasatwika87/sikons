@@ -14,7 +14,7 @@ function AkunContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<{ user: UserResponse }>("/auth/me")
+    apiFetch<{ user: UserResponse }>("/me")
       .then(({ user }) => setUser(user))
       .catch((err) => setError(err instanceof Error ? err.message : "Gagal memuat data"))
       .finally(() => setLoading(false));

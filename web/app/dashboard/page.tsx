@@ -74,6 +74,7 @@ function DashboardContent() {
 
   // Handlers untuk complete
   const handleCompleteClick = (booking: BookingResponse) => {
+    completeMutation.reset();
     setCompleteTarget(booking);
     setCompleteNote(booking.lecturer_note ?? "");
     setNoteError(null);
@@ -103,6 +104,7 @@ function DashboardContent() {
 
   // Handlers untuk no-show
   const handleNoShowClick = (booking: BookingResponse) => {
+    noShowMutation.reset();
     setNoShowTarget(booking);
   };
 
@@ -263,6 +265,7 @@ function DashboardContent() {
         confirmText="Ya, Tidak Hadir"
         variant="destructive"
         loading={noShowMutation.isPending}
+        error={noShowMutation.error?.message}
         onConfirm={handleNoShowConfirm}
       />
     </div>

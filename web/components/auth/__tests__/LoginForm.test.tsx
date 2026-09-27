@@ -11,6 +11,7 @@ import { describe, expect, it, beforeAll, afterEach, afterAll, vi } from "vitest
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
+import { anonymousHandlers } from "@/lib/msw/session";
 
 const mockRouter = { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() };
 let mockSearchParams = new URLSearchParams("");
@@ -41,12 +42,7 @@ const { AuthProvider } = await import("@/lib/auth/AuthContext");
 /** Setup MSW: /auth/me 401 (belum login) + /auth/login 200 dengan data user. */
 function setupLoginHandlers() {
   server.use(
-    http.get(`${BASE_URL}/auth/me`, () =>
-      HttpResponse.json(
-        { error: { code: "UNAUTHORIZED", message: "" } },
-        { status: 401 }
-      )
-    ),
+    ...anonymousHandlers(),
     http.post(`${BASE_URL}/auth/login`, () =>
       HttpResponse.json({
         user: {

@@ -9,12 +9,13 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { describe, expect, it, beforeAll, afterEach, afterAll } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
-import { useCreateBooking } from "@/hooks/useCreateBooking";
+import { useCreateBooking, type CreateBookingError } from "@/hooks/useCreateBooking";
+import { sessionHandlers } from "@/lib/msw/session";
 
 const BASE_URL = "http://localhost:8080/api/v1";
 const server = setupServer();
@@ -25,18 +26,16 @@ afterAll(() => server.close());
 
 /** Handler bootstrap /me. */
 function meHandler() {
-  return http.get(`${BASE_URL}/auth/me`, () =>
-    HttpResponse.json({
-      user: {
-        id: "user-1",
-        email: "test@example.com",
-        full_name: "Test User",
-        role: "student",
-        is_active: true,
-        created_at: new Date().toISOString(),
-      },
-    })
-  );
+  return sessionHandlers({
+    user: {
+      id: "user-1",
+      email: "test@example.com",
+      full_name: "Test User",
+      role: "student",
+      is_active: true,
+      created_at: new Date().toISOString(),
+    },
+  });
 }
 
 /** QueryClient untuk test. */
@@ -91,7 +90,7 @@ function BookingProbe({ slotId, topic, description = "", onComplete }: ProbeProp
 describe("useCreateBooking", () => {
   it("sukses: membuat booking", async () => {
     server.use(
-      meHandler(),
+      ...meHandler(),
       http.post(`${BASE_URL}/bookings`, () =>
         HttpResponse.json({ id: "booking-new" }, { status: 201 })
       )
@@ -121,7 +120,7 @@ describe("useCreateBooking", () => {
 
   it("SLOT_ALREADY_BOOKED → error received", async () => {
     server.use(
-      meHandler(),
+      ...meHandler(),
       http.post(`${BASE_URL}/bookings`, () =>
         HttpResponse.json(
           { error: { code: "SLOT_ALREADY_BOOKED", message: "Slot sudah dipesan orang lain" } },
@@ -130,7 +129,7 @@ describe("useCreateBooking", () => {
       )
     );
 
-    const result = await new Promise<{ code: string }>((resolve) => {
+    const result = await new Promise<CreateBookingError>((resolve) => {
       render(
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
@@ -139,7 +138,7 @@ describe("useCreateBooking", () => {
                 slotId="slot-already-booked"
                 topic="Bimbingan skripsi"
                 onComplete={(data, error) => {
-                  if (error) { resolve(error as { code: string }); }
+                  if (error) { resolve(error as CreateBookingError); }
                 }}
               />
             </ReadyChildren>
@@ -148,12 +147,12 @@ describe("useCreateBooking", () => {
       );
     });
 
-    expect(result.code).toBe("SLOT_ALREADY_BOOKED");
+    expect(result).toEqual({ type: "already_booked", message: "Slot sudah dipesan orang lain" });
   });
 
   it("SLOT_TOO_SOON → error received", async () => {
     server.use(
-      meHandler(),
+      ...meHandler(),
       http.post(`${BASE_URL}/bookings`, () =>
         HttpResponse.json(
           { error: { code: "SLOT_TOO_SOON", message: "Minimal 60 menit sebelum konsultasi" } },
@@ -162,7 +161,7 @@ describe("useCreateBooking", () => {
       )
     );
 
-    const result = await new Promise<{ code: string }>((resolve) => {
+    const result = await new Promise<CreateBookingError>((resolve) => {
       render(
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
@@ -171,7 +170,7 @@ describe("useCreateBooking", () => {
                 slotId="slot-too-soon"
                 topic="Bimbingan skripsi"
                 onComplete={(data, error) => {
-                  if (error) { resolve(error as { code: string }); }
+                  if (error) { resolve(error as CreateBookingError); }
                 }}
               />
             </ReadyChildren>
@@ -180,12 +179,12 @@ describe("useCreateBooking", () => {
       );
     });
 
-    expect(result.code).toBe("SLOT_TOO_SOON");
+    expect(result).toEqual({ type: "lead_time", message: "Minimal 60 menit sebelum konsultasi" });
   });
 
   it("BOOKING_LIMIT_REACHED → error received", async () => {
     server.use(
-      meHandler(),
+      ...meHandler(),
       http.post(`${BASE_URL}/bookings`, () =>
         HttpResponse.json(
           { error: { code: "BOOKING_LIMIT_REACHED", message: "Batas 3 booking aktif sudah tercapai" } },
@@ -194,7 +193,7 @@ describe("useCreateBooking", () => {
       )
     );
 
-    const result = await new Promise<{ code: string }>((resolve) => {
+    const result = await new Promise<CreateBookingError>((resolve) => {
       render(
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
@@ -203,7 +202,7 @@ describe("useCreateBooking", () => {
                 slotId="slot-limit-reached"
                 topic="Bimbingan skripsi"
                 onComplete={(data, error) => {
-                  if (error) { resolve(error as { code: string }); }
+                  if (error) { resolve(error as CreateBookingError); }
                 }}
               />
             </ReadyChildren>
@@ -212,12 +211,12 @@ describe("useCreateBooking", () => {
       );
     });
 
-    expect(result.code).toBe("BOOKING_LIMIT_REACHED");
+    expect(result).toEqual({ type: "limit", message: "Batas 3 booking aktif sudah tercapai" });
   });
 
   it("kode error tidak dikenali -> type: unknown", async () => {
     server.use(
-      meHandler(),
+      ...meHandler(),
       http.post(`${BASE_URL}/bookings`, () =>
         HttpResponse.json(
           { error: { code: "INTERNAL_SERVER_ERROR", message: "Something went wrong" } },
@@ -251,14 +250,12 @@ describe("useCreateBooking", () => {
       }
     });
 
-    // capturedError adalah ApiError dengan .code
-    const apiError = capturedError as { code: string };
-    expect(apiError.code).toBe("INTERNAL_SERVER_ERROR");
+    expect(capturedError).toEqual({ type: "unknown", message: "Something went wrong" });
   });
 
   it("IDEMPOTENCY_KEY_REUSED -> falls back to unknown type", async () => {
     server.use(
-      meHandler(),
+      ...meHandler(),
       http.post(`${BASE_URL}/bookings`, () =>
         HttpResponse.json(
           { error: { code: "IDEMPOTENCY_KEY_REUSED", message: "Key sudah dipakai dengan request berbeda" } },
@@ -294,53 +291,62 @@ describe("useCreateBooking", () => {
 
     // IDEMPOTENCY_KEY_REUSED ditangkap tapi tidak punya case eksplisit di onError,
     // jadi di mapping ke unknown. Test ini membuktikan error sampai ke hook state.
-    const apiError = capturedError as { code: string };
-    expect(apiError.code).toBe("IDEMPOTENCY_KEY_REUSED");
+    expect(capturedError).toEqual({
+      type: "unknown",
+      message: "Key sudah dipakai dengan request berbeda",
+    });
   });
 
-  it("Idempotency-Key SAMA saat retry", async () => {
+  it("Idempotency-Key SAMA saat submit diulang dari dialog yang sama", async () => {
+    // Versi lama cuma mengirim satu request, jadi loop pembanding key tidak
+    // pernah jalan dan test selalu lolos. Sekarang submit dua kali lewat
+    // instance hook yang sama, persis seperti pengguna menekan "Pesan" lagi.
     const requestKeys: string[] = [];
-    let callCount = 0;
 
     server.use(
-      meHandler(),
+      ...meHandler(),
       http.post(`${BASE_URL}/bookings`, ({ request }) => {
-        callCount++;
-        const key = request.headers.get("Idempotency-Key");
-        requestKeys.push(key ?? "");
-        // Selalu gagal dengan 409 (bukan retry succeed) untuk membuktikan key sama.
+        requestKeys.push(request.headers.get("Idempotency-Key") ?? "");
         return HttpResponse.json(
-          { error: { code: "SLOT_ALREADY_BOOKED", message: "Slot sudah dipesan" } },
-          { status: 409 }
+          { error: { code: "INTERNAL_SERVER_ERROR", message: "Gangguan sementara" } },
+          { status: 500 }
         );
       })
     );
 
-    await new Promise<void>((resolve) => {
-      render(
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <ReadyChildren>
-              <BookingProbe
-                slotId="slot-1"
-                topic="Bimbingan skripsi"
-                onComplete={(data, error) => {
-                  // Test selesai setelah error diterima.
-                  if (error) { resolve(); }
-                }}
-              />
-            </ReadyChildren>
-          </AuthProvider>
-        </QueryClientProvider>
+    function SubmitTwiceProbe() {
+      const { mutate, isPending } = useCreateBooking("lecturer-1");
+      return (
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() =>
+            mutate({ slotId: "slot-1", topic: "Bimbingan skripsi", description: "" })
+          }
+        >
+          Kirim
+        </button>
       );
-    });
-
-    // Idempotency key HARUS ada dan tidak null.
-    expect(requestKeys.length).toBeGreaterThan(0);
-    expect(requestKeys[0]).not.toBe("");
-    // Semua request harus pakai key yang sama.
-    for (let i = 1; i < requestKeys.length; i++) {
-      expect(requestKeys[i]).toBe(requestKeys[0]);
     }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ReadyChildren>
+            <SubmitTwiceProbe />
+          </ReadyChildren>
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+
+    const tombol = await screen.findByRole("button", { name: "Kirim" });
+    tombol.click();
+    await waitFor(() => expect(requestKeys).toHaveLength(1));
+    await waitFor(() => expect(tombol).toBeEnabled());
+    tombol.click();
+    await waitFor(() => expect(requestKeys).toHaveLength(2));
+
+    expect(requestKeys[0]).not.toBe("");
+    expect(requestKeys[1]).toBe(requestKeys[0]);
   });
 });

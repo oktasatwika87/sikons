@@ -1,10 +1,10 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { http, HttpResponse } from "msw";
 import { describe, expect, it, beforeAll, afterEach, afterAll, vi } from "vitest";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { RoleRedirect } from "@/components/auth/RoleRedirect";
 import { setupServer } from "msw/node";
 import { useRouter } from "next/navigation";
+import { sessionHandlers } from "@/lib/msw/session";
 
 export const BASE_URL = "http://localhost:8080/api/v1";
 export const server = setupServer();
@@ -34,18 +34,16 @@ async function renderAsRole(role: "lecturer" | "student" | "admin") {
   };
 
   server.use(
-    http.get(`${BASE_URL}/auth/me`, () =>
-      HttpResponse.json({
-        user: {
-          id: "u1",
-          email: "test@example.com",
-          full_name: "Test User",
-          role,
-          is_active: true,
-          created_at: new Date().toISOString(),
-        },
-      })
-    )
+    ...sessionHandlers({
+      user: {
+        id: "u1",
+        email: "test@example.com",
+        full_name: "Test User",
+        role,
+        is_active: true,
+        created_at: new Date().toISOString(),
+      },
+    })
   );
 
   render(

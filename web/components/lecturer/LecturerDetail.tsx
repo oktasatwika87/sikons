@@ -32,13 +32,16 @@ import {
  * Kalender:
  *  - Default minggu berjalan (Senin–Minggu Asia/Jakarta).
  *  - Tombol "Sebelumnya" dinonaktifkan kalau minggu sebelumnya seluruhnya
- *    sudah lewat (lihat isBeforeThisWeekJakarta).
+ *    sudah lewat (lihat isBeforeThisWeekJakarta), artinya mati di minggu
+ *    berjalan.
  *  - Klik slot open membuka BookingDialog.
  *  - SLOT_ALREADY_BOOKED error ditangani dengan banner yang muncul setelah dialog tertutup.
  *
  * Format waktu SELALU lewat lib/date — tidak ada Date.toLocaleString
  * polos di sini.
  */
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
@@ -53,6 +56,12 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
   // Hitung from/to dari weekAnchor lewat helper — konsisten dengan label
   // minggu dan header kolom kalender.
   const { from: weekFrom, to: weekTo } = weekRangeJakarta(weekAnchor);
+
+  // Yang dicek minggu SEBELUMNYA, bukan minggu yang sedang tampil. Di minggu
+  // berjalan, minggu lalu sudah lewat semua, jadi tombol harus mati di sini.
+  const prevWeekIsPast = isBeforeThisWeekJakarta(
+    new Date(weekAnchor.getTime() - WEEK_MS)
+  );
 
   const slotsQuery = useQuery<LecturerSlotsResponse>({
     queryKey: [
@@ -73,17 +82,15 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
     enabled: !!lecturerQuery.data,
   });
 
+  // Geser pakai milidetik, bukan setDate(): setDate ikut zona browser, dan di
+  // zona yang punya DST hasilnya bisa meleset satu jam melewati batas Senin WIB.
   const handlePrevWeek = () => {
-    if (isBeforeThisWeekJakarta(weekAnchor)) return;
-    const next = new Date(weekAnchor);
-    next.setDate(next.getDate() - 7);
-    setWeekAnchor(next);
+    if (prevWeekIsPast) return;
+    setWeekAnchor(new Date(weekAnchor.getTime() - WEEK_MS));
   };
 
   const handleNextWeek = () => {
-    const next = new Date(weekAnchor);
-    next.setDate(next.getDate() + 7);
-    setWeekAnchor(next);
+    setWeekAnchor(new Date(weekAnchor.getTime() + WEEK_MS));
   };
 
   const handleThisWeek = () => setWeekAnchor(new Date());
@@ -122,8 +129,7 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
   const slotsByDate = slotsQuery.data
     ? groupSlotsByJakartaDate(slotsQuery.data.slots)
     : new Map<string, LecturerSlotsResponse["slots"]>();
-  const prevDisabled =
-    isBeforeThisWeekJakarta(weekAnchor) || slotsQuery.isFetching;
+  const prevDisabled = prevWeekIsPast || slotsQuery.isFetching;
 
   return (
     <div className="container mx-auto max-w-5xl px-4 py-8">
@@ -138,7 +144,7 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
             type="button"
             onClick={handleDismissError}
             className="ml-4 shrink-0 rounded-md p-1 opacity-70 hover:opacity-100"
-            aria-label="Dismiss"
+            aria-label="Tutup"
           >
             <svg
               className="h-4 w-4"

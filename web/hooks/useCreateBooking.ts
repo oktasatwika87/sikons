@@ -3,13 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiFetch } from "@/hooks/useApiFetch";
-import { ApiError } from "@/lib/api/errors";
+import { toTypedError, type TypedError } from "@/lib/api/errors";
 import type { BookingResponse } from "@/lib/api/types";
 
-export interface CreateBookingError {
-  type: "already_booked" | "lead_time" | "limit" | "unknown";
-  message: string;
-}
+export type CreateBookingError = TypedError<"already_booked" | "lead_time" | "limit">;
+
+// IDEMPOTENCY_KEY_REUSED sengaja tidak dipetakan (jatuh ke "unknown"): itu
+// tanda bug di klien, bukan kondisi yang bisa diperbaiki pengguna.
+const CREATE_CODES = {
+  SLOT_ALREADY_BOOKED: "already_booked",
+  SLOT_TOO_SOON: "lead_time",
+  BOOKING_LIMIT_REACHED: "limit",
+} as const;
 
 interface CreateBookingVariables {
   slotId: string;
@@ -35,47 +40,30 @@ export function useCreateBooking(lecturerId: string) {
 
   const mutation = useMutation<BookingResponse, CreateBookingError, CreateBookingVariables>({
     mutationFn: async ({ slotId, topic, description }) => {
-      return fetchWithRetry<BookingResponse>("/bookings", {
-        method: "POST",
-        headers: {
-          "Idempotency-Key": idempotencyKey,
-        },
-        body: JSON.stringify({
-          slot_id: slotId,
-          topic,
-          description,
-        }),
-      });
+      try {
+        return await fetchWithRetry<BookingResponse>("/bookings", {
+          method: "POST",
+          headers: {
+            "Idempotency-Key": idempotencyKey,
+          },
+          body: JSON.stringify({
+            slot_id: slotId,
+            topic,
+            description,
+          }),
+        });
+      } catch (err) {
+        throw toTypedError(err, CREATE_CODES);
+      }
     },
     onError: (error) => {
-      if (error instanceof ApiError) {
-        switch (error.code) {
-          case "SLOT_ALREADY_BOOKED":
-            queryClient.invalidateQueries({
-              queryKey: ["lecturer", lecturerIdRef.current, "slots"],
-            });
-            return { type: "already_booked" as const, message: error.message };
-
-          case "SLOT_TOO_SOON":
-            return { type: "lead_time" as const, message: error.message };
-
-          case "BOOKING_LIMIT_REACHED":
-            return { type: "limit" as const, message: error.message };
-
-          // Idempotency key reused dengan body berbeda — indicates client bug
-          // (frontend tidak mengirim request_hash, jadi ini tidak mungkin terjadi
-          // dengan implementasi normal). Fallback ke unknown.
-          case "IDEMPOTENCY_KEY_REUSED":
-            return { type: "unknown" as const, message: error.message };
-
-          default:
-            return { type: "unknown" as const, message: error.message };
-        }
+      // Slot sudah diambil orang lain: kalender perlu dimuat ulang supaya
+      // slot itu tampil sebagai booked.
+      if (error.type === "already_booked") {
+        queryClient.invalidateQueries({
+          queryKey: ["lecturer", lecturerIdRef.current, "slots"],
+        });
       }
-      return {
-        type: "unknown" as const,
-        message: error instanceof Error ? error.message : "Terjadi kesalahan",
-      };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bookings"] });

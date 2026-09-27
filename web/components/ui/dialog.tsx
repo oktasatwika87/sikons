@@ -103,7 +103,7 @@ const DialogClose = ({
       className
     )}
     onClick={onClick}
-    aria-label="Close"
+    aria-label="Tutup"
     {...props}
   >
     <X className="h-4 w-4" />
