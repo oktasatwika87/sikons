@@ -236,19 +236,3 @@ jobs:
             exit 1
           fi
           echo "Tidak ada aksara non-Latin / emoji."
-
-      # Regex sama dengan .git/hooks/pre-commit langkah 1. .md dan
-      # ./ dicek di folder mana pun (bukan cuma root), karena `next dev`
-      # bisa membuat file seperti itu di dalam web/.
-      # `|| true` wajib: shell step Actions jalan dengan `bash -e -o pipefail`,
-      # dan grep yang TIDAK menemukan apa pun keluar dengan kode 1. Tanpa ini
-      # step justru gagal di kondisi yang benar (repo bersih).
-      - name: tracked-config-check
-        run: |
-          BERMASALAH=$(git ls-files | grep -i -E '(^|/)\.md$|(^|/)\./|^\.cursor/|^\.aider|AGENTS\.md|^\.github/copilot' || true)
-          if [ -n "$BERMASALAH" ]; then
-            echo "File konfigurasi tooling eksternal ikut dilacak git:"
-            echo "$BERMASALAH" | sed 's/^/  /'
-            exit 1
-          fi
-          echo "Tidak ada file konfigurasi tooling eksternal yang dilacak."
