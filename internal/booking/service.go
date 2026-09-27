@@ -187,11 +187,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrStudentNotFound
 	}
-	if !studentOK {
-		return nil, ErrStudentNotFound
-	}
+	// Error lain (koneksi putus, context dibatalkan) wajib dicek sebelum
+	// studentOK: di urutan lama, studentOK masih false saat itu sehingga
+	// gangguan database dilaporkan sebagai 401 "Akun tidak valid".
 	if err != nil {
 		return nil, fmt.Errorf("mengunci baris mahasiswa: %w", err)
+	}
+	if !studentOK {
+		return nil, ErrStudentNotFound
 	}
 
 	// LANGKAH 2 — kunci baris slot.

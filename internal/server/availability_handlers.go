@@ -154,9 +154,11 @@ func (s *Server) handleUpdateAvailabilityRule(w http.ResponseWriter, r *http.Req
 	}
 
 	ruleID := chi.URLParam(r, "id")
-	if ruleID == "" {
-		httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
-			"ID aturan wajib diisi", nil)
+	// ID yang bukan UUID pasti tidak cocok dengan baris mana pun. Tanpa cek
+	// ini Postgres menolak cast ::uuid (SQLSTATE 22P02) dan klien dapat 500.
+	if !isValidUUID(ruleID) {
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Aturan tidak ditemukan", nil)
 		return
 	}
 
@@ -206,9 +208,11 @@ func (s *Server) handleDeleteAvailabilityRule(w http.ResponseWriter, r *http.Req
 	}
 
 	ruleID := chi.URLParam(r, "id")
-	if ruleID == "" {
-		httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
-			"ID aturan wajib diisi", nil)
+	// ID yang bukan UUID pasti tidak cocok dengan baris mana pun. Tanpa cek
+	// ini Postgres menolak cast ::uuid (SQLSTATE 22P02) dan klien dapat 500.
+	if !isValidUUID(ruleID) {
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Aturan tidak ditemukan", nil)
 		return
 	}
 
@@ -353,9 +357,11 @@ func (s *Server) handleDeleteAvailabilityException(w http.ResponseWriter, r *htt
 	}
 
 	exceptionID := chi.URLParam(r, "id")
-	if exceptionID == "" {
-		httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
-			"ID pengecualian wajib diisi", nil)
+	// ID yang bukan UUID pasti tidak cocok dengan baris mana pun. Tanpa cek
+	// ini Postgres menolak cast ::uuid (SQLSTATE 22P02) dan klien dapat 500.
+	if !isValidUUID(exceptionID) {
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Pengecualian tidak ditemukan", nil)
 		return
 	}
 

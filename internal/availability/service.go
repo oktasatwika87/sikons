@@ -143,7 +143,7 @@ type Rule struct {
 func (s *Service) GetRulesByLecturer(ctx context.Context, lecturerID string) ([]Rule, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id::text, lecturer_id::text, day_of_week,
-		       start_time::text, end_time::text,
+		       to_char(start_time, 'HH24:MI'), to_char(end_time, 'HH24:MI'),
 		       slot_duration_min,
 		       effective_from::text, effective_to::text,
 		       is_active, created_at, updated_at
@@ -156,13 +156,17 @@ func (s *Service) GetRulesByLecturer(ctx context.Context, lecturerID string) ([]
 	}
 	defer rows.Close()
 
-	var rules []Rule
+	// Slice kosong, bukan nil, supaya JSON-nya [] dan bukan null.
+	//
+	// Jam dibaca sebagai teks HH:MM hasil to_char. Versi lama memilih
+	// start_time::text lalu memindainya ke time.Time: pgx menolak itu, jadi
+	// GET /availability-rules selalu 500 begitu dosen punya satu aturan saja.
+	rules := []Rule{}
 	for rows.Next() {
 		var r Rule
-		var startT, endT time.Time
 		err := rows.Scan(
 			&r.ID, &r.LecturerID, &r.DayOfWeek,
-			&startT, &endT,
+			&r.StartTime, &r.EndTime,
 			&r.SlotDurationMin,
 			&r.EffectiveFrom, &r.EffectiveTo,
 			&r.IsActive, &r.CreatedAt, &r.UpdatedAt,
@@ -170,8 +174,6 @@ func (s *Service) GetRulesByLecturer(ctx context.Context, lecturerID string) ([]
 		if err != nil {
 			return nil, fmt.Errorf("membaca baris aturan: %w", err)
 		}
-		r.StartTime = startT.Format("15:04")
-		r.EndTime = endT.Format("15:04")
 		rules = append(rules, r)
 	}
 
@@ -185,10 +187,9 @@ func (s *Service) GetRulesByLecturer(ctx context.Context, lecturerID string) ([]
 // GetRuleByID mengambil satu aturan berdasarkan ID dan memverifikasi kepemilikan.
 func (s *Service) GetRuleByID(ctx context.Context, ruleID, lecturerID string) (*Rule, error) {
 	var r Rule
-	var startT, endT time.Time
 	err := s.pool.QueryRow(ctx, `
 		SELECT id::text, lecturer_id::text, day_of_week,
-		       start_time::text, end_time::text,
+		       to_char(start_time, 'HH24:MI'), to_char(end_time, 'HH24:MI'),
 		       slot_duration_min,
 		       effective_from::text, effective_to::text,
 		       is_active, created_at, updated_at
@@ -197,7 +198,7 @@ func (s *Service) GetRuleByID(ctx context.Context, ruleID, lecturerID string) (*
 		ruleID, lecturerID,
 	).Scan(
 		&r.ID, &r.LecturerID, &r.DayOfWeek,
-		&startT, &endT,
+		&r.StartTime, &r.EndTime,
 		&r.SlotDurationMin,
 		&r.EffectiveFrom, &r.EffectiveTo,
 		&r.IsActive, &r.CreatedAt, &r.UpdatedAt,
@@ -208,8 +209,6 @@ func (s *Service) GetRuleByID(ctx context.Context, ruleID, lecturerID string) (*
 	if err != nil {
 		return nil, fmt.Errorf("mengambil aturan: %w", err)
 	}
-	r.StartTime = startT.Format("15:04")
-	r.EndTime = endT.Format("15:04")
 	return &r, nil
 }
 
@@ -374,7 +373,7 @@ func (s *Service) GetExceptionsByLecturer(ctx context.Context, lecturerID string
 	rows, err := s.pool.Query(ctx, `
 		SELECT id::text, lecturer_id::text, exception_date::text,
 		       reason, is_full_day,
-		       start_time::text, end_time::text,
+		       to_char(start_time, 'HH24:MI'), to_char(end_time, 'HH24:MI'),
 		       created_at
 		FROM availability_exceptions
 		WHERE lecturer_id = $1 AND exception_date BETWEEN $2 AND $3
@@ -385,24 +384,21 @@ func (s *Service) GetExceptionsByLecturer(ctx context.Context, lecturerID string
 	}
 	defer rows.Close()
 
-	var exceptions []Exception
+	// Jam langsung dipindai ke *string (NULL untuk pengecualian seharian).
+	// Versi lama memindai start_time::text ke interface{} lalu type assertion
+	// ke time.Time; isinya string, jadi pengecualian sebagian hari membuat
+	// handler panic.
+	exceptions := []Exception{}
 	for rows.Next() {
 		var e Exception
-		var startT, endT interface{}
 		err := rows.Scan(
 			&e.ID, &e.LecturerID, &e.ExceptionDate,
 			&e.Reason, &e.IsFullDay,
-			&startT, &endT,
+			&e.StartTime, &e.EndTime,
 			&e.CreatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("membaca baris pengecualian: %w", err)
-		}
-		if startT != nil {
-			st := startT.(time.Time).Format("15:04")
-			et := endT.(time.Time).Format("15:04")
-			e.StartTime = &st
-			e.EndTime = &et
 		}
 		exceptions = append(exceptions, e)
 	}
@@ -417,11 +413,10 @@ func (s *Service) GetExceptionsByLecturer(ctx context.Context, lecturerID string
 // GetExceptionByID mengambil satu pengecualian dan memverifikasi kepemilikan.
 func (s *Service) GetExceptionByID(ctx context.Context, exceptionID, lecturerID string) (*Exception, error) {
 	var e Exception
-	var startT, endT interface{}
 	err := s.pool.QueryRow(ctx, `
 		SELECT id::text, lecturer_id::text, exception_date::text,
 		       reason, is_full_day,
-		       start_time::text, end_time::text,
+		       to_char(start_time, 'HH24:MI'), to_char(end_time, 'HH24:MI'),
 		       created_at
 		FROM availability_exceptions
 		WHERE id = $1 AND lecturer_id = $2`,
@@ -429,7 +424,7 @@ func (s *Service) GetExceptionByID(ctx context.Context, exceptionID, lecturerID 
 	).Scan(
 		&e.ID, &e.LecturerID, &e.ExceptionDate,
 		&e.Reason, &e.IsFullDay,
-		&startT, &endT,
+		&e.StartTime, &e.EndTime,
 		&e.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -437,12 +432,6 @@ func (s *Service) GetExceptionByID(ctx context.Context, exceptionID, lecturerID 
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mengambil pengecualian: %w", err)
-	}
-	if startT != nil {
-		st := startT.(time.Time).Format("15:04")
-		et := endT.(time.Time).Format("15:04")
-		e.StartTime = &st
-		e.EndTime = &et
 	}
 	return &e, nil
 }

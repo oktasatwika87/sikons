@@ -67,6 +67,13 @@ func (s *Server) handleListLecturers(w http.ResponseWriter, r *http.Request) {
 // Endpoint ini PUBLIK — alasan sama dengan handleListLecturers.
 func (s *Server) handleGetLecturer(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	// ID yang bukan UUID pasti tidak cocok dengan baris mana pun. Tanpa cek
+	// ini Postgres menolak cast ::uuid (SQLSTATE 22P02) dan klien dapat 500.
+	if !isValidUUID(id) {
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Dosen tidak ditemukan", nil)
+		return
+	}
 
 	l, err := s.lecturer.GetByID(r.Context(), id)
 	if err != nil {
@@ -88,6 +95,13 @@ func (s *Server) handleGetLecturer(w http.ResponseWriter, r *http.Request) {
 // Yang butuh login baru POST /bookings.
 func (s *Server) handleGetLecturerSlots(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	// ID yang bukan UUID pasti tidak cocok dengan baris mana pun. Tanpa cek
+	// ini Postgres menolak cast ::uuid (SQLSTATE 22P02) dan klien dapat 500.
+	if !isValidUUID(id) {
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Dosen tidak ditemukan", nil)
+		return
+	}
 	q := r.URL.Query()
 
 	// Validasi dosen ada

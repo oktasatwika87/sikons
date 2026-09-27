@@ -20,7 +20,9 @@ import (
 
 	"github.com/oktasatwika87/sikons/internal/auth"
 	"github.com/oktasatwika87/sikons/internal/availability"
+	"github.com/oktasatwika87/sikons/internal/booking"
 	"github.com/oktasatwika87/sikons/internal/config"
+	"github.com/oktasatwika87/sikons/internal/lecturer"
 	"github.com/oktasatwika87/sikons/internal/slotgen"
 )
 
@@ -100,7 +102,9 @@ func serverLengkap(t *testing.T) http.Handler {
 		Tokens:       tokens,
 		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Availability: availability.NewService(pool),
+		Booking:      booking.NewService(pool, 60, 3, 1),
 		Slotgen:      slotgen.New(pool, campusTZ, 30),
+		Lecturer:     lecturer.NewService(pool),
 	}).Routes()
 }
 

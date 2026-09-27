@@ -252,9 +252,11 @@ func (s *Server) handleGetBooking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bookingID := chi.URLParam(r, "id")
-	if bookingID == "" {
-		httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
-			"ID booking wajib diisi", nil)
+	// ID yang bukan UUID pasti tidak cocok dengan baris mana pun. Tanpa cek
+	// ini Postgres menolak cast ::uuid (SQLSTATE 22P02) dan klien dapat 500.
+	if !isValidUUID(bookingID) {
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Booking tidak ditemukan", nil)
 		return
 	}
 
@@ -343,9 +345,11 @@ func (s *Server) handleCancelBooking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bookingID := chi.URLParam(r, "id")
-	if bookingID == "" {
-		httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
-			"ID booking wajib diisi", nil)
+	// ID yang bukan UUID pasti tidak cocok dengan baris mana pun. Tanpa cek
+	// ini Postgres menolak cast ::uuid (SQLSTATE 22P02) dan klien dapat 500.
+	if !isValidUUID(bookingID) {
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Booking tidak ditemukan", nil)
 		return
 	}
 
@@ -399,9 +403,11 @@ func (s *Server) handleCompleteBooking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bookingID := chi.URLParam(r, "id")
-	if bookingID == "" {
-		httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
-			"ID booking wajib diisi", nil)
+	// ID yang bukan UUID pasti tidak cocok dengan baris mana pun. Tanpa cek
+	// ini Postgres menolak cast ::uuid (SQLSTATE 22P02) dan klien dapat 500.
+	if !isValidUUID(bookingID) {
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Booking tidak ditemukan", nil)
 		return
 	}
 
@@ -451,9 +457,11 @@ func (s *Server) handleNoShowBooking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bookingID := chi.URLParam(r, "id")
-	if bookingID == "" {
-		httpx.Error(w, http.StatusBadRequest, httpx.CodeValidation,
-			"ID booking wajib diisi", nil)
+	// ID yang bukan UUID pasti tidak cocok dengan baris mana pun. Tanpa cek
+	// ini Postgres menolak cast ::uuid (SQLSTATE 22P02) dan klien dapat 500.
+	if !isValidUUID(bookingID) {
+		httpx.Error(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Booking tidak ditemukan", nil)
 		return
 	}
 

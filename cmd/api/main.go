@@ -11,11 +11,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/oktasatwika87/sikons/internal/auth"
 	"github.com/oktasatwika87/sikons/internal/availability"
 	"github.com/oktasatwika87/sikons/internal/booking"
 	"github.com/oktasatwika87/sikons/internal/config"
 	"github.com/oktasatwika87/sikons/internal/db"
+	"github.com/oktasatwika87/sikons/internal/lecturer"
 	"github.com/oktasatwika87/sikons/internal/server"
 	"github.com/oktasatwika87/sikons/internal/slotgen"
 )
@@ -67,16 +70,8 @@ func run() error {
 	}
 
 	srv := &http.Server{
-		Addr: ":" + cfg.HTTPPort,
-		Handler: server.New(cfg, server.Deps{
-			DB:           pool,
-			Auth:         auth.NewService(pool, tokens, log),
-			Tokens:       tokens,
-			Log:          log,
-			Availability: availability.NewService(pool),
-			Booking:      booking.NewService(pool, cfg.BookingMinLeadMin, cfg.BookingCancelMinHrs, cfg.ReminderLeadHours),
-			Slotgen:      slotgen.New(pool, cfg.CampusTZ, cfg.SlotHorizonDays),
-		}).Routes(),
+		Addr:    ":" + cfg.HTTPPort,
+		Handler: server.New(cfg, newDeps(cfg, pool, tokens, log)).Routes(),
 
 		// Tanpa timeout ini, satu klien yang membuka koneksi lalu diam saja
 		// bisa menahan resource selamanya. Default net/http adalah "tanpa
@@ -140,4 +135,21 @@ func newLogger(cfg config.Config) *slog.Logger {
 		return slog.New(slog.NewTextHandler(os.Stdout, opts))
 	}
 	return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+}
+
+// newDeps merakit semua dependensi server. Dipisah dari run() supaya bisa
+// diuji: main_test.go memastikan tidak ada field Deps yang tertinggal nil.
+// Dulu Lecturer lupa diisi di sini, dan semua endpoint /lecturers panic di
+// binary asli walaupun test paket server lulus (test merakit Deps sendiri).
+func newDeps(cfg config.Config, pool *pgxpool.Pool, tokens *auth.TokenIssuer, log *slog.Logger) server.Deps {
+	return server.Deps{
+		DB:           pool,
+		Auth:         auth.NewService(pool, tokens, log),
+		Tokens:       tokens,
+		Log:          log,
+		Availability: availability.NewService(pool),
+		Booking:      booking.NewService(pool, cfg.BookingMinLeadMin, cfg.BookingCancelMinHrs, cfg.ReminderLeadHours),
+		Slotgen:      slotgen.New(pool, cfg.CampusTZ, cfg.SlotHorizonDays),
+		Lecturer:     lecturer.NewService(pool),
+	}
 }
