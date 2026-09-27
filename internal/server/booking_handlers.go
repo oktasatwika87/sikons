@@ -280,19 +280,26 @@ func (s *Server) handleGetBooking(w http.ResponseWriter, r *http.Request) {
 // viewToResponse menerjemahkan BookingView jadi DTO HTTP sesuai peran pemanggil.
 // field person yang tidak relevan (mahasiswa untuk student, dosen untuk lecturer)
 // sengaja tidak dimunculkan agar klien tidak bingung mana yang harus dipakai.
+//
+// lecturer_note hanya dikirim ke dosen — catatan dosen bersifat privat, dan
+// frontend wajib mendapat respons yang konsisten dengan kontrak ini. Field ini
+// menggunakan omitempty, jadi cukup tidak di-set untuk mahasiswa.
 func viewToResponse(v *booking.BookingView, role string) bookingResponse {
 	resp := bookingResponse{
-		ID:           v.ID,
-		Status:       v.Status,
-		Topic:        v.Topic,
-		Description:  v.Description,
-		CreatedAt:    v.CreatedAt.Format(time.RFC3339),
-		LecturerNote: v.LecturerNote,
+		ID:          v.ID,
+		Status:      v.Status,
+		Topic:       v.Topic,
+		Description: v.Description,
+		CreatedAt:   v.CreatedAt.Format(time.RFC3339),
 		Slot: slotRef{
 			ID:      v.SlotID,
 			StartAt: v.SlotStart.Format(time.RFC3339),
 			EndAt:   v.SlotEnd.Format(time.RFC3339),
 		},
+	}
+	if role == auth.RoleLecturer {
+		// Hanya dosen yang boleh melihat catatan internalnya sendiri.
+		resp.LecturerNote = v.LecturerNote
 	}
 	switch role {
 	case auth.RoleStudent:

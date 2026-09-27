@@ -18,10 +18,20 @@ const store: BookingStore = {
   nextId: 1,
 };
 
+// Peran pemanggil saat ini. Diset lewat setCurrentRole() oleh kode test
+// (mis. sessionHandlers) supaya handler GET /bookings bisa meniru kontrak
+// backend yang asli: lecturer_note hanya dikirim ke dosen, bukan mahasiswa.
+let currentRole: "student" | "lecturer" | "admin" | null = null;
+
+export function setCurrentRole(role: "student" | "lecturer" | "admin" | null) {
+  currentRole = role;
+}
+
 // Reset store untuk setiap test.
 export function resetBookingStore() {
   store.bookings.clear();
   store.nextId = 1;
+  currentRole = null;
 }
 
 // Set initial bookings dari luar (misal di test setup).
@@ -34,6 +44,15 @@ export function setBookings(bookings: Array<{ id: string; [key: string]: unknown
       store.nextId = numId + 1;
     }
   }
+}
+
+// Hapus lecturer_note dari respons jika pemanggil bukan dosen. Catatan dosen
+// privat — sama seperti kontrak backend, frontend tidak boleh mendapat field
+// ini untuk sesi mahasiswa/admin.
+function tanpaLecturerNoteUntukNonDosen<T extends Record<string, unknown>>(b: T): T {
+  if (currentRole === "lecturer") return b;
+  const { lecturer_note: _omit, ...rest } = b;
+  return rest as T;
 }
 
 export const bookingHandlers = [
@@ -118,7 +137,9 @@ export const bookingHandlers = [
 
     const total = bookings.length;
     const start = (page - 1) * perPage;
-    const paginatedBookings = bookings.slice(start, start + perPage);
+    const paginatedBookings = bookings
+      .slice(start, start + perPage)
+      .map((b) => tanpaLecturerNoteUntukNonDosen(b as Record<string, unknown>));
 
     return HttpResponse.json({
       bookings: paginatedBookings,
@@ -138,7 +159,7 @@ export const bookingHandlers = [
         { status: 404 }
       );
     }
-    return HttpResponse.json(booking);
+    return HttpResponse.json(tanpaLecturerNoteUntukNonDosen(booking as Record<string, unknown>));
   }),
 
   // PATCH /api/v1/bookings/:id/cancel — cancel booking

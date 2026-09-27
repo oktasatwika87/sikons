@@ -14,6 +14,12 @@ import { AuthProvider } from "@/lib/auth/AuthContext";
 import KonsultasiPage from "@/app/konsultasi/page";
 import { setupServer } from "msw/node";
 import { sessionHandlers } from "@/lib/msw/session";
+import {
+  bookingHandlers,
+  setCurrentRole,
+  setBookings,
+  resetBookingStore,
+} from "@/lib/msw/handlers/booking";
 
 // Mock next/navigation SEBELUM import component
 const mockRouter = {
@@ -28,11 +34,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 export const BASE_URL = "http://localhost:8080/api/v1";
-export const server = setupServer();
+// Default handler booking menyalin kontrak backend yang asli:
+// untuk role selain dosen, lecturer_note dihapus dari respons.
+export const server = setupServer(...bookingHandlers);
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
   server.resetHandlers();
+  resetBookingStore();
   vi.clearAllMocks();
 });
 afterAll(() => server.close());
@@ -119,17 +128,13 @@ function renderAsRole(role: "student" | "lecturer") {
         created_at: new Date().toISOString(),
       };
 
-  server.use(
-    ...sessionHandlers({ user }),
-    http.get(`${BASE_URL}/bookings`, () =>
-      HttpResponse.json({
-        bookings: MOCK_BOOKINGS,
-        page: 1,
-        per_page: 20,
-        total: MOCK_BOOKINGS.length,
-      })
-    )
-  );
+  // Pakai handler default bookingHandlers — setBookings() mengisi data,
+  // setCurrentRole() memberitahu handler GET /bookings peran pemanggil
+  // supaya lecturer_note hanya dikirim saat role == "lecturer" (sama
+  // seperti kontrak backend). Sesi login dipasang via sessionHandlers.
+  setCurrentRole(role);
+  setBookings(MOCK_BOOKINGS);
+  server.use(...sessionHandlers({ user }));
 
   render(
     <QueryClientProvider client={queryClient}>

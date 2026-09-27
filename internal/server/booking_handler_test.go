@@ -1129,9 +1129,10 @@ func TestNoShowBooking_MahasiswaDitolak(t *testing.T) {
 }
 
 // TestLecturerNoteMunculDiGetBooking menguji alur lengkap:
-// 1. booking diselesaikan dosen dengan lecturer_note
-// 2. GET /bookings sebagai mahasiswa harus mengembalikan lecturer_note
-// 3. GET /bookings sebagai dosen juga harus mengembalikan lecturer_note
+//  1. booking diselesaikan dosen dengan lecturer_note
+//  2. GET /bookings sebagai mahasiswa TIDAK boleh mengembalikan field
+//     lecturer_note — catatan dosen privat untuk dosen saja
+//  3. GET /bookings sebagai dosen boleh mengembalikan lecturer_note
 func TestLecturerNoteMunculDiGetBooking(t *testing.T) {
 	h := buatServerUji(t)
 	dosenID, tokenDosen := h.buatDosen()
@@ -1153,7 +1154,9 @@ func TestLecturerNoteMunculDiGetBooking(t *testing.T) {
 		t.Fatalf("complete gagal: %d", w.Code)
 	}
 
-	// GET sebagai mahasiswa.
+	// GET sebagai mahasiswa: field lecturer_note HARUS tidak ada di response.
+	// Catatan dosen hanya untuk dosen — frontend tidak boleh melihatnya
+	// (kalau field bocor, defense-in-depth di frontend pun percuma).
 	reqMhs := httptest.NewRequest("GET", "/api/v1/bookings", nil)
 	reqMhs.Header.Set("Authorization", "Bearer "+tokenMhs)
 	wMhs := httptest.NewRecorder()
@@ -1169,8 +1172,9 @@ func TestLecturerNoteMunculDiGetBooking(t *testing.T) {
 		bm := b.(map[string]any)
 		if bm["id"] == bookingID {
 			foundMhs = true
-			if bm["lecturer_note"] != note {
-				t.Errorf("mhs: lecturer_note = %q, mau %q", bm["lecturer_note"], note)
+			if _, ada := bm["lecturer_note"]; ada {
+				t.Errorf("mhs: lecturer_note seharusnya TIDAK ada di response, dapat %q",
+					bm["lecturer_note"])
 			}
 		}
 	}
@@ -1178,7 +1182,7 @@ func TestLecturerNoteMunculDiGetBooking(t *testing.T) {
 		t.Error("mhs: booking tidak ditemukan di daftar")
 	}
 
-	// GET sebagai dosen.
+	// GET sebagai dosen: field lecturer_note HARUS ada dan berisi catatan.
 	reqDosen := httptest.NewRequest("GET", "/api/v1/bookings", nil)
 	reqDosen.Header.Set("Authorization", "Bearer "+tokenDosen)
 	wDosen := httptest.NewRecorder()
