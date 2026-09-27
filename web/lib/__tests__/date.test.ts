@@ -55,7 +55,9 @@ describe("lib/date — konversi zona Asia/Jakarta", () => {
     // Kamis 10 Sep 2026 → Senin 7 Sep 2026.
     const kamis = new Date("2026-09-10T08:00:00+07:00");
     const senin = startOfWeekJakarta(kamis);
-    expect(senin.getDay()).toBe(1); // 1=Senin
+    // getDay() ikut zona proses, bukan WIB (Senin 00:00 WIB = Minggu 17:00
+    // UTC), jadi hari dicek lewat helper yang memang pakai Asia/Jakarta.
+    expect(jakartaDayName(senin)).toBe("Senin");
     expect(jakartaDateKey(senin)).toBe("2026-09-07");
   });
 
@@ -63,7 +65,7 @@ describe("lib/date — konversi zona Asia/Jakarta", () => {
     // Minggu 13 Sep 2026 → Senin 7 Sep 2026 (minggu yang sama, ISO).
     const minggu = new Date("2026-09-13T08:00:00+07:00");
     const senin = startOfWeekJakarta(minggu);
-    expect(senin.getDay()).toBe(1);
+    expect(jakartaDayName(senin)).toBe("Senin");
     expect(jakartaDateKey(senin)).toBe("2026-09-07");
   });
 

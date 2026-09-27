@@ -210,31 +210,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Salin PERSIS regex dari .git/hooks/pre-commit langkah 2. Perbedaan
-      # mekanis satu-satunya:
-      #   - hook memindai `git diff --cached` (staged untuk satu commit),
-      #     CI memindai `git ls-files` (tracked penuh).
-      #   - hook scan file per file dengan perl; CI pakai `git grep -I -P`
-      #     yang sudah skip binary otomatis (`-I`). Tanpa `-I`, scanner
-      #     bisa menuduh file biner (favicon.ico, gambar, font) yang
-      #     byte-bytenya kebetulan jatuh di rentang CJK. Untuk push ke
-      #     branch clean, himpunan ini pada dasarnya sama.
+      # Regex sama dengan .git/hooks/pre-commit langkah 2, dan sama-sama pakai
+      # perl seperti hook-nya. Bedanya cuma himpunan file: hook memindai file
+      # staged, CI memindai semua file teks yang di-track.
+      #
+      # Kenapa bukan `git grep -P` lagi: di git yang PCRE-nya tidak jalan dalam
+      # mode UTF, pola \x{3000} dst ditolak ("code point too large"). Versi lama
+      # membuang stderr + `|| true`, jadi error itu tertelan dan step tetap
+      # hijau tanpa memindai apa pun. Sekarang:
+      #   - daftar file teks diambil dari `git grep -I -l -e ''` (biner dilewati),
+      #   - perl gagal = step gagal (tidak ada `|| true` di jalur pemindaian),
+      #   - ada uji mandiri: kalau pola tidak mengenali satu karakter CJK
+      #     contoh, step langsung gagal, bukan lolos diam-diam.
       - name: non-latin-script-check
         run: |
-          ASING=$(git grep -n -I -P '[\x{3000}-\x{30ff}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}\x{ff00}-\x{ffef}\x{1f300}-\x{1faff}]' -- . 2>/dev/null || true)
+          POLA='[\x{3000}-\x{30ff}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}\x{ff00}-\x{ffef}\x{1f300}-\x{1faff}]'
+          if ! printf '\xe4\xb8\xad\n' | perl -CSD -ne "exit 1 unless /$POLA/"; then
+            echo "Pemindai gagal mengenali karakter uji, hasil scan tidak bisa dipercaya."
+            exit 1
+          fi
+          ASING=$(git grep -I -z -l -e '' -- . | xargs -0 perl -CSD -ne "print \"\$ARGV:\$.: \$_\" if /$POLA/; close ARGV if eof")
           if [ -n "$ASING" ]; then
-            echo "Ditemukan aksara non-Latin / emoji di file kode:"
+            echo "Ditemukan aksara non-Latin / emoji di file:"
             echo "$ASING" | sed 's/^/  /'
             exit 1
           fi
+          echo "Tidak ada aksara non-Latin / emoji."
 
-      # Salin PERSIS regex dari .git/hooks/pre-commit langkah 1.
-      # Termasuk `^\.github/copilot` yang sebelumnya tidak ada di workflow.
+      # Regex sama dengan .git/hooks/pre-commit langkah 1. .md dan
+      # ./ dicek di folder mana pun (bukan cuma root), karena `next dev`
+      # bisa membuat file seperti itu di dalam web/.
+      # `|| true` wajib: shell step Actions jalan dengan `bash -e -o pipefail`,
+      # dan grep yang TIDAK menemukan apa pun keluar dengan kode 1. Tanpa ini
+      # step justru gagal di kondisi yang benar (repo bersih).
       - name: tracked-config-check
         run: |
-          BERMASALAH=$(git ls-files | grep -i -E '^\.md$|^\./|^\.cursor/|^\.aider|AGENTS\.md|^\.github/copilot')
+          BERMASALAH=$(git ls-files | grep -i -E '(^|/)\.md$|(^|/)\./|^\.cursor/|^\.aider|AGENTS\.md|^\.github/copilot' || true)
           if [ -n "$BERMASALAH" ]; then
             echo "File konfigurasi tooling eksternal ikut dilacak git:"
             echo "$BERMASALAH" | sed 's/^/  /'
             exit 1
           fi
+          echo "Tidak ada file konfigurasi tooling eksternal yang dilacak."
