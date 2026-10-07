@@ -158,9 +158,9 @@ func Load() (Config, error) {
 	if cfg.DatabaseURL == "" {
 		missing = append(missing, "DATABASE_URL")
 	}
-	if cfg.JWTSecret == "" {
-		missing = append(missing, "JWT_SECRET")
-	}
+	// JWT_SECRET tidak dicek di sini. Hanya cmd/api yang butuh secret untuk
+	// menandatangani token. Perintah lain (generate-slots, worker) tidak
+	// memerlukan secret.
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("env wajib belum diisi: %s", strings.Join(missing, ", "))
 	}

@@ -43,6 +43,10 @@ func run() error {
 		return err
 	}
 
+	if cfg.JWTSecret == "" {
+		return errors.New("JWT_SECRET belum diisi — api tidak bisa menandatangani token tanpa secret")
+	}
+
 	log := newLogger(cfg)
 	slog.SetDefault(log)
 

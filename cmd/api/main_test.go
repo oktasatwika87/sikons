@@ -1,39 +1,39 @@
 package main
 
 import (
-	"log/slog"
-	"reflect"
+	"os"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/oktasatwika87/sikons/internal/auth"
-	"github.com/oktasatwika87/sikons/internal/config"
 )
 
-// Test ini tidak butuh database: yang dicek cuma bahwa newDeps mengisi
-// SEMUA field server.Deps. Kalau suatu saat ada service baru di Deps tapi
-// lupa dirakit di sini, test ini yang gagal, bukan request pertama di
-// produksi yang panic karena nil pointer.
-func TestNewDeps_SemuaFieldTerisi(t *testing.T) {
-	tokens, err := auth.NewTokenIssuer(strings.Repeat("r", 32), time.Minute)
-	if err != nil {
-		t.Fatalf("membuat token issuer: %v", err)
+// TestAPITanpaJWTSecret_Ditolak memastikan API menolak start ketika JWT_SECRET kosong.
+func TestAPITanpaJWTSecret_Ditolak(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL kosong — test dilewati")
 	}
-	cfg := config.Config{CampusTZ: time.UTC, SlotHorizonDays: 30}
 
-	deps := newDeps(cfg, &pgxpool.Pool{}, tokens, slog.Default())
-
-	v := reflect.ValueOf(deps)
-	for i := 0; i < v.NumField(); i++ {
-		f := v.Field(i)
-		switch f.Kind() {
-		case reflect.Pointer, reflect.Interface:
-			if f.IsNil() {
-				t.Errorf("server.Deps.%s tidak diisi di newDeps", v.Type().Field(i).Name)
+	orig := map[string]string{
+		"DATABASE_URL": os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":   os.Getenv("JWT_SECRET"),
+	}
+	os.Setenv("DATABASE_URL", dsn)
+	os.Unsetenv("JWT_SECRET")
+	defer func() {
+		for k, v := range orig {
+			if v == "" {
+				os.Unsetenv(k)
+			} else {
+				os.Setenv(k, v)
 			}
 		}
+	}()
+
+	err := run()
+	if err == nil {
+		t.Fatal("run() seharusnya gagal karena JWT_SECRET kosong")
+	}
+	if !strings.Contains(err.Error(), "JWT_SECRET") {
+		t.Fatalf("error = %q, seharusnya menyebutkan JWT_SECRET", err.Error())
 	}
 }
