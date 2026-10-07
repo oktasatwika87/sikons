@@ -56,14 +56,12 @@ export function LandingPage() {
           Masuk atau daftar untuk memulai reservasi.
         </p>
         <div className="mt-6 flex justify-center gap-3">
-          <Link href="/login">
-            <Button variant="outline" size="sm">
-              Masuk
-            </Button>
-          </Link>
-          <Link href="/register">
-            <Button size="sm">Daftar</Button>
-          </Link>
+          <Button variant="outline" size="sm" render={<Link href="/login" />}>
+            Masuk
+          </Button>
+          <Button size="sm" render={<Link href="/register" />}>
+            Daftar
+          </Button>
         </div>
       </div>
     </div>

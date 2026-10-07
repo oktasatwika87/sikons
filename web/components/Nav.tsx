@@ -49,10 +49,8 @@ export function Nav() {
               <Link href="/konsultasi" className="text-sm hover:underline">
                 Konsultasi
               </Link>
-              <Link href="/akun">
-                <Button variant="ghost" size="sm">
-                  Akun
-                </Button>
+              <Link href="/akun" className="text-sm hover:underline">
+                Akun
               </Link>
               <Button
                 variant="outline"
@@ -65,16 +63,12 @@ export function Nav() {
             </>
           ) : (
             <>
-              <Link href="/login">
-                <Button variant="ghost" size="sm">
-                  Masuk
-                </Button>
-              </Link>
-              <Link href="/register">
-                <Button variant="outline" size="sm">
-                  Daftar
-                </Button>
-              </Link>
+              <Button variant="ghost" size="sm" render={<Link href="/login" />}>
+                Masuk
+              </Button>
+              <Button variant="outline" size="sm" render={<Link href="/register" />}>
+                Daftar
+              </Button>
             </>
           )}
         </div>
