@@ -8,7 +8,7 @@
 -include .env
 export
 
-.PHONY: help up down reset logs psql migrate-up migrate-down migrate-version migrate-new test-db run seed generate-slots test test-unit test-concurrency test-cover tidy fmt vet worker
+.PHONY: help up down reset logs psql migrate-up migrate-down migrate-version migrate-new test-db run seed generate-slots test test-unit test-concurrency test-cover tidy fmt vet worker e2e
 
 help: ## Tampilkan daftar perintah
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -91,3 +91,27 @@ fmt: ## Format seluruh kode
 
 vet: ## Analisis statis bawaan Go
 	go vet ./...
+
+# Test E2E Playwright end-to-end. Asumsi Postgres sudah nyala lewat
+# `docker compose up -d` — Makefile ini tidak menyalakan container. Urutan:
+# 1) migrate, seed, generate-slots: pakai target yang sudah ada, idempoten.
+# 2) build binary api ke ./bin/api (bukan `go run` — start lebih cepat dan
+#    tidak mengunci source tree).
+# 3) `next build` di web/: next start butuh output ini.
+# 4) jalankan Playwright. webServer di config (API + next start) diwarisi
+#    env dari `make`, jadi DATABASE_URL, JWT_SECRET, CORS_ALLOWED_ORIGINS
+#    dari .env sudah tersedia untuk kedua server.
+e2e: ## Siapkan DB, build api+web, jalankan test E2E Playwright
+	@echo "== migrate =="
+	$(MAKE) migrate-up
+	@echo "== seed =="
+	$(MAKE) seed
+	@echo "== generate-slots =="
+	$(MAKE) generate-slots
+	@echo "== build api =="
+	@mkdir -p bin
+	go build -o bin/api ./cmd/api
+	@echo "== build web =="
+	cd web && npm run build
+	@echo "== jalankan playwright =="
+	cd web && npx playwright test
