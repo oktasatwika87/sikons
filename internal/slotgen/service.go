@@ -36,6 +36,9 @@ type Service struct {
 	pool        *pgxpool.Pool
 	campusTZ    *time.Location
 	horizonDays int
+	// jam bisa diganti saat test, supaya window UTC vs WIB yang berbeda
+	// tanggal bisa diuji secara deterministik.
+	jam func() time.Time
 }
 
 // Horizon mengembalikan jumlah hari horizon.
@@ -48,8 +51,17 @@ func New(pool *pgxpool.Pool, campusTZ *time.Location, horizonDays int) *Service 
 		pool:        pool,
 		campusTZ:    campusTZ,
 		horizonDays: horizonDays,
+		jam:         time.Now,
 	}
 }
+
+// SetJamUntukTest mengganti sumber waktu. Dipakai test yang ingin
+// menguji perilaku di jendela UTC vs kampus yang berbeda tanggal
+// (misal 17:50-24:00 UTC). Pola sama dengan auth.TokenIssuer.
+//
+// Hanya untuk test — namanya sengaja dibuat panjang dan canggung supaya
+// tidak ada yang memakainya di kode produksi tanpa sadar.
+func (s *Service) SetJamUntukTest(jam func() time.Time) { s.jam = jam }
 
 // Reconcile menjalankan rekonsiliasi untuk satu dosen.
 // from dan to adalah tanggal di zona kampus (Asia/Jakarta).
@@ -64,7 +76,7 @@ func (s *Service) Reconcile(ctx context.Context, lecturerID string, from, to tim
 
 	// Satu sumber waktu untuk seluruh rekonsiliasi: konsisten dan bisa diuji.
 	// Konversi ke zona kampus supaya batas "masa lalu" akurat.
-	now := time.Now().In(s.campusTZ)
+	now := s.jam().In(s.campusTZ)
 
 	// Konversi ke UTC untuk query SQL. Postgres menerima timestamptz dan
 	// menginterpretasikan time.Time sesuai zona waktu-nya (UTC default).

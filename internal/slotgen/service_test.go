@@ -551,10 +551,13 @@ func TestHitungSlot_TakMelampauiHorizon(t *testing.T) {
 	svc := &Service{
 		campusTZ:    campusTZ,
 		horizonDays: 30,
+		jam:         time.Now,
 	}
 
-	now := time.Now()
-	from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, campusTZ)
+	// Konversi ke zona kampus dulu, baru ambil komponen tanggal.
+	// Tanpa ini, midnight UTC bisa berbeda tanggal di zona kampus.
+	nowLocal := time.Now().In(campusTZ)
+	from := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ)
 	to := from.AddDate(0, 0, 30)
 
 	// Aturan Senin jam 9-10, 30 menit
@@ -569,7 +572,56 @@ func TestHitungSlot_TakMelampauiHorizon(t *testing.T) {
 		},
 	}
 
-	slots := svc.computeShouldExist(from, to, rules, nil, now.UTC())
+	slots := svc.computeShouldExist(from, to, rules, nil, nowLocal.UTC())
+
+	horizonLimit := to.UTC()
+	for _, slot := range slots {
+		if slot.startAt.After(horizonLimit) {
+			t.Errorf("slot melampaui horizon: start=%v, limit=%v", slot.startAt, horizonLimit)
+		}
+	}
+}
+
+// TestHitungSlot_TakMelampauiHorizon_NowJendelaRawan memverifikasi
+// perilaku horizon di jendela rawan 17:00-24:00 UTC, di mana tanggal
+// UTC dan Asia/Jakarta bisa berbeda. now tetap di
+// 2026-10-10T17:50:00Z (= 00:50 WIB 11 Oktober) supaya jendela ini
+// selalu teruji apa pun jam CI berjalan.
+func TestHitungSlot_TakMelampauiHorizon_NowJendelaRawan(t *testing.T) {
+	campusTZ, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
+
+	svc := &Service{
+		campusTZ:    campusTZ,
+		horizonDays: 30,
+	}
+
+	// Now tetap: 2026-10-10 17:50:00 UTC. Di Asia/Jakarta ini adalah
+	// 2026-10-11 00:50 WIB. Tanggal UTC = 10, tanggal WIB = 11.
+	nowTetap := time.Date(2026, 10, 10, 17, 50, 0, 0, time.UTC)
+	nowLocal := nowTetap.In(campusTZ)
+	if nowLocal.Day() != 11 {
+		t.Fatalf("asumsi test salah: nowLocal.Day() = %d, seharusnya 11", nowLocal.Day())
+	}
+
+	from := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ)
+	to := from.AddDate(0, 0, 30)
+
+	// Aturan Senin jam 9-10, 30 menit
+	rules := []ruleRecord{
+		{
+			dayOfWeek:       1, // Senin
+			startTime:       time.Date(0, 1, 1, 9, 0, 0, 0, time.UTC),
+			endTime:         time.Date(0, 1, 1, 10, 0, 0, 0, time.UTC),
+			slotDurationMin: 30,
+			effectiveFrom:   from,
+			effectiveTo:     nil,
+		},
+	}
+
+	slots := svc.computeShouldExist(from, to, rules, nil, nowTetap.UTC())
 
 	horizonLimit := to.UTC()
 	for _, slot := range slots {

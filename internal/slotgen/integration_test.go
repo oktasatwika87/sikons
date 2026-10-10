@@ -893,8 +893,11 @@ func TestReconcile_TakAdaSlotMelampauiHorizon(t *testing.T) {
 	defer HapusAturanDosen(t, dosen)
 
 	campusTZ, _ := time.LoadLocation("Asia/Jakarta")
-	now := time.Now()
-	from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, campusTZ)
+	// Konversi ke zona kampus dulu, baru ambil komponen tanggal.
+	// Tanpa ini, midnight UTC bisa berbeda tanggal di zona kampus
+	// (test gagal di jendela 17:00-24:00 UTC = 00:00-07:00 WIB).
+	nowLocal := time.Now().In(campusTZ)
+	from := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ)
 	to := from.AddDate(0, 0, 30)
 
 	// Aturan setiap hari kerja jam 9-10, 30 menit (2 slot per hari)
@@ -915,6 +918,68 @@ func TestReconcile_TakAdaSlotMelampauiHorizon(t *testing.T) {
 
 	// Ambil semua slot dan cek tidak ada yang melampaui horizon
 	horizonLimit := from.AddDate(0, 0, 30).UTC()
+	rows, err := poolUji.Query(context.Background(), `
+		SELECT start_at FROM slots WHERE lecturer_id = $1::uuid ORDER BY start_at`, dosen)
+	if err != nil {
+		t.Fatalf("query slot: %v", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var startAt time.Time
+		if err := rows.Scan(&startAt); err != nil {
+			t.Fatalf("scan slot: %v", err)
+		}
+		if startAt.After(horizonLimit) {
+			t.Errorf("slot melampaui horizon: start_at=%v, limit=%v", startAt, horizonLimit)
+		}
+	}
+	if rows.Err() != nil {
+		t.Fatalf("iterasi slot: %v", rows.Err())
+	}
+}
+
+// TestReconcile_TakAdaSlotMelampauiHorizon_NowJendelaRawan memverifikasi
+// perilaku horizon di jendela rawan 17:00-24:00 UTC, di mana tanggal
+// UTC dan Asia/Jakarta bisa berbeda. now tetap di
+// 2026-10-10T17:50:00Z (= 00:50 WIB 11 Oktober) supaya jendela ini
+// selalu teruji apa pun jam CI berjalan.
+func TestReconcile_TakAdaSlotMelampauiHorizon_NowJendelaRawan(t *testing.T) {
+	dosen := buatDosen(t)
+	defer HapusAturanDosen(t, dosen)
+
+	campusTZ, _ := time.LoadLocation("Asia/Jakarta")
+	// Now tetap: 2026-10-10 17:50:00 UTC. Di Asia/Jakarta ini
+	// adalah 2026-10-11 00:50 WIB.
+	nowTetap := time.Date(2026, 10, 10, 17, 50, 0, 0, time.UTC)
+	nowLocal := nowTetap.In(campusTZ)
+	if nowLocal.Day() != 11 {
+		t.Fatalf("asumsi test salah: nowLocal.Day() = %d, seharusnya 11", nowLocal.Day())
+	}
+
+	from := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ)
+	to := from.AddDate(0, 0, 30)
+
+	_, err := poolUji.Exec(context.Background(), `
+		INSERT INTO availability_rules
+		(lecturer_id, day_of_week, start_time, end_time, slot_duration_min, effective_from, is_active)
+		VALUES ($1::uuid, 1, '09:00'::time, '10:00'::time, 30, $2::date, true)`,
+		dosen, from.Format("2006-01-02"))
+	if err != nil {
+		t.Fatalf("insert aturan: %v", err)
+	}
+
+	svc := getSvc()
+	// Suntik now tetap ke service supaya Reconcile pakai from/to
+	// yang sudah dihitung dari now tetap ini.
+	svc.SetJamUntukTest(func() time.Time { return nowTetap })
+
+	_, err = svc.Reconcile(context.Background(), dosen, from, to, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	horizonLimit := to.UTC()
 	rows, err := poolUji.Query(context.Background(), `
 		SELECT start_at FROM slots WHERE lecturer_id = $1::uuid ORDER BY start_at`, dosen)
 	if err != nil {
