@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -83,6 +84,14 @@ func emailUnik(nama string) string {
 // yang benar-benar dipakai di produksi.
 func serverLengkap(t *testing.T) http.Handler {
 	t.Helper()
+	return serverLengkapWithLog(t, slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+// serverLengkapWithLog sama seperti serverLengkap tapi logger-nya
+// bisa disuplai. Test yang ingin menangkap log peringatan reuse
+// pakai helper ini dengan slog.NewTextHandler yang menulis ke buffer.
+func serverLengkapWithLog(t *testing.T, log *slog.Logger) http.Handler {
+	t.Helper()
 	pool := dbUji(t)
 
 	tokens, err := auth.NewTokenIssuer(secretUji, 15*time.Minute)
@@ -98,9 +107,9 @@ func serverLengkap(t *testing.T) http.Handler {
 
 	return New(config.Config{Env: "test", CampusTZ: campusTZ, SlotHorizonDays: 30}, Deps{
 		DB:           pool,
-		Auth:         auth.NewService(pool, tokens, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		Auth:         auth.NewService(pool, tokens, log),
 		Tokens:       tokens,
-		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Log:          log,
 		Availability: availability.NewService(pool),
 		Booking:      booking.NewService(pool, 60, 3, 1),
 		Slotgen:      slotgen.New(pool, campusTZ, 30),
@@ -1332,6 +1341,421 @@ func TestRefresh_BalasanHilang_Paralel_TepatSatuAktif(t *testing.T) {
 	}
 }
 
+// TestLogout_DanLangsungRefresh_401DenganWaktuAsli memverifikasi bahwa
+// logout sekarang menyimpan revoked_at = waktu pencabutan yang sebenarnya
+// (bukan backdate 1 jam) dan refresh setelah logout langsung kena
+// cabang 4 (tanpa penerus) → 401 REFRESH_TOKEN_REUSED. Status 401 harus
+// tercapai bahkan dalam 30 detik grace, dan selisih revoked_at dengan
+// now() harus kecil — menunjukkan data waktu tidak dimanipulasi.
+func TestLogout_DanLangsungRefresh_401DenganWaktuAsli(t *testing.T) {
+	pool := dbUji(t)
+	h := serverLengkap(t)
+	email := emailUnik("logoutwaktu")
+
+	rec := kirim(t, h, http.MethodPost, "/api/v1/auth/register", map[string]string{
+		"email": email, "password": "password-yang-cukup-panjang", "full_name": "Test",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("register: %s", rec.Body.String())
+	}
+	rec = kirim(t, h, http.MethodPost, "/api/v1/auth/login", map[string]string{
+		"email": email, "password": "password-yang-cukup-panjang",
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: %s", rec.Body.String())
+	}
+	var tokenAwal *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "refresh_token" {
+			tokenAwal = c
+		}
+	}
+
+	// Rotasi untuk dapat token baru, supaya tokenAwal punya replaced_by
+	// yang akan di-clear saat logout.
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh: %s", rec.Body.String())
+	}
+
+	// Logout dengan tokenAwal. Sekarang tokenAwal.revoked_at = now() (waktu
+	// sebenarnya) dan replaced_by = NULL.
+	waktuSebelumLogout := time.Now()
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/logout", nil, "", []*http.Cookie{tokenAwal})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("logout: status = %d, mau 204", rec.Code)
+	}
+	waktuSetelahLogout := time.Now()
+
+	// Refresh tokenAwal di bawah 30 detik grace. Cabang a (keluarga
+	// sudah tidak punya token aktif — logout mencabut seluruhnya) →
+	// 401 REFRESH_TOKEN_INVALID, tanpa log peringatan reuse, tanpa
+	// DB changes.
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("refresh setelah logout: status = %d, mau 401, body=%s", rec.Code, rec.Body.String())
+	}
+	if kodeError(t, rec) != "REFRESH_TOKEN_INVALID" {
+		t.Errorf("code = %s, mau REFRESH_TOKEN_INVALID", kodeError(t, rec))
+	}
+
+	// Cek waktu revoked_at TIDAK dimanipulasi. revoked_at harus di
+	// antara waktuSebelumLogout dan waktuSetelahLogout (kisaran beberapa
+	// detik). Kalau logout masih backdate 1 jam, revoked_at akan
+	// sebelum waktuSebelumLogout dan test gagal.
+	var familyID string
+	err := pool.QueryRow(context.Background(), `
+		SELECT family_id FROM refresh_tokens
+		WHERE user_id = (SELECT id FROM users WHERE email = $1)
+		LIMIT 1`, email).Scan(&familyID)
+	if err != nil {
+		t.Fatalf("family_id: %v", err)
+	}
+
+	rows, err := pool.Query(context.Background(), `
+		SELECT revoked_at FROM refresh_tokens
+		WHERE family_id = $1 AND revoked_at IS NOT NULL
+		ORDER BY revoked_at DESC`, familyID)
+	if err != nil {
+		t.Fatalf("query revoked_at: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ra time.Time
+		if err := rows.Scan(&ra); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		// Selisih harus kecil — beberapa detik, bukan jam.
+		if ra.Before(waktuSebelumLogout.Add(-2 * time.Second)) {
+			t.Errorf("revoked_at = %v, lebih lama dari logout — backdate tidak seharusnya dipakai", ra)
+		}
+		if ra.After(waktuSetelahLogout.Add(2 * time.Second)) {
+			t.Errorf("revoked_at = %v, lebih baru dari logout", ra)
+		}
+	}
+}
+
+// TestLogout_DanRefresh_NoLogReuse memverifikasi bahwa refresh
+// setelah logout sekarang masuk cabang a (keluarga sudah tidak
+// punya token aktif), bukan cabang reuse. Hasil: 401
+// REFRESH_TOKEN_INVALID, TIDAK ada log peringatan reuse, dan
+// replaced_by di keluarga TIDAK berubah dibanding sebelum logout.
+func TestLogout_DanRefresh_NoLogReuse(t *testing.T) {
+	pool := dbUji(t)
+	logBuf := &bytes.Buffer{}
+	log := slog.New(slog.NewTextHandler(logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	h := serverLengkapWithLog(t, log)
+	email := emailUnik("logout-nolog")
+
+	rec := kirim(t, h, http.MethodPost, "/api/v1/auth/register", map[string]string{
+		"email": email, "password": "password-yang-cukup-panjang", "full_name": "Test",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("register: %s", rec.Body.String())
+	}
+	rec = kirim(t, h, http.MethodPost, "/api/v1/auth/login", map[string]string{
+		"email": email, "password": "password-yang-cukup-panjang",
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: %s", rec.Body.String())
+	}
+	var tokenAwal *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "refresh_token" {
+			tokenAwal = c
+		}
+	}
+
+	// Rotasi X → Y supaya X.replaced_by = Y. Setelah logout, replaced_by
+	// ini harus tetap ada (logout tidak menyentuhnya).
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh: %s", rec.Body.String())
+	}
+
+	// Snapshot replaced_by di keluarga SEBELUM logout.
+	var familyID string
+	err := pool.QueryRow(context.Background(), `
+		SELECT family_id FROM refresh_tokens
+		WHERE user_id = (SELECT id FROM users WHERE email = $1)
+		LIMIT 1`, email).Scan(&familyID)
+	if err != nil {
+		t.Fatalf("family_id: %v", err)
+	}
+	replacedBySebelum := replacedBySnapshot(t, pool, familyID)
+
+	// Clear log buffer dari output refresh sebelumnya.
+	logBuf.Reset()
+
+	// Logout dengan tokenAwal.
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/logout", nil, "", []*http.Cookie{tokenAwal})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("logout: %d", rec.Code)
+	}
+
+	// Refresh dengan tokenAwal di bawah 30 detik grace. Cabang a
+	// (keluarga kosong) → 401 REFRESH_TOKEN_INVALID.
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("refresh setelah logout: %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if kodeError(t, rec) != "REFRESH_TOKEN_INVALID" {
+		t.Errorf("code = %s, mau REFRESH_TOKEN_INVALID", kodeError(t, rec))
+	}
+
+	// TIDAK ada log peringatan reuse — ini yang membedakan logout dari
+	// pencurian.
+	if strings.Contains(logBuf.String(), "refresh token reuse terdeteksi") {
+		t.Errorf("ada log peringatan reuse, padahal ini bukan pencurian. Log:\n%s", logBuf.String())
+	}
+
+	// replaced_by di keluarga TIDAK berubah (logout tidak menyentuhnya).
+	replacedBySetelah := replacedBySnapshot(t, pool, familyID)
+	if !reflect.DeepEqual(replacedBySebelum, replacedBySetelah) {
+		t.Errorf("replaced_by berubah setelah logout.\nsebelum: %v\nsesudah: %v", replacedBySebelum, replacedBySetelah)
+	}
+}
+
+// TestLogout_SetelahRotasi_X401_NoLog memverifikasi bahwa X yang
+// sudah dirotasi (replaced_by != NULL), lalu logout, lalu dikirim
+// lagi dalam grace → 401 REFRESH_TOKEN_INVALID tanpa log reuse.
+// Sebelum revisi ini, X masuk cabang 2b (race, 409) karena replaced_by
+// masih menunjuk ke Y yang juga sudah di-revoke. Sekarang cabang a
+// aktif duluan karena keluarga sudah kosong.
+func TestLogout_SetelahRotasi_X401_NoLog(t *testing.T) {
+	logBuf := &bytes.Buffer{}
+	log := slog.New(slog.NewTextHandler(logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	h := serverLengkapWithLog(t, log)
+	email := emailUnik("logout-setelah-rotasi")
+	password := "password-yang-cukup-panjang"
+
+	rec := kirim(t, h, http.MethodPost, "/api/v1/auth/register", map[string]string{
+		"email": email, "password": password, "full_name": "Test",
+	}, "")
+	rec = kirim(t, h, http.MethodPost, "/api/v1/auth/login", map[string]string{
+		"email": email, "password": password,
+	}, "")
+	var tokenAwal *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "refresh_token" {
+			tokenAwal = c
+		}
+	}
+
+	// X → Y, supaya X.replaced_by = Y dan Y aktif.
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh: %s", rec.Body.String())
+	}
+
+	// Logout dengan X. Y (token aktif lain di keluarga) ikut ter-revoke.
+	logBuf.Reset()
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/logout", nil, "", []*http.Cookie{tokenAwal})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("logout: %d", rec.Code)
+	}
+
+	// Refresh X dalam grace. X.revoked_at baru, X.replaced_by = Y (tidak
+	// disentuh logout). Tapi keluarga sudah kosong → cabang a.
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("refresh X dalam grace setelah logout: %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if kodeError(t, rec) != "REFRESH_TOKEN_INVALID" {
+		t.Errorf("code = %s, mau REFRESH_TOKEN_INVALID", kodeError(t, rec))
+	}
+
+	// Tanpa log peringatan reuse.
+	if strings.Contains(logBuf.String(), "refresh token reuse terdeteksi") {
+		t.Errorf("ada log peringatan reuse, padahal ini bukan pencurian. Log:\n%s", logBuf.String())
+	}
+}
+
+// TestRefresh_PenerusDicabut2a_LogReuseAda memverifikasi bahwa Y
+// yang dicabut oleh cabang 2a (replaced_by NULL sejak dibuat),
+// ketika dikirim lagi dalam grace DAN keluarga masih punya token
+// aktif (Z dari 2a), tetap masuk cabang b → reuse dengan log.
+// Y tidak punya replaced_by, BUKAN keluarga kosong, jadi cabang a
+// tidak aktif.
+func TestRefresh_PenerusDicabut2a_LogReuseAda(t *testing.T) {
+	pool := dbUji(t)
+	logBuf := &bytes.Buffer{}
+	log := slog.New(slog.NewTextHandler(logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	h := serverLengkapWithLog(t, log)
+	email := emailUnik("penerus2a-log")
+	password := "password-yang-cukup-panjang"
+
+	rec := kirim(t, h, http.MethodPost, "/api/v1/auth/register", map[string]string{
+		"email": email, "password": password, "full_name": "Test",
+	}, "")
+	rec = kirim(t, h, http.MethodPost, "/api/v1/auth/login", map[string]string{
+		"email": email, "password": password,
+	}, "")
+	var tokenX *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "refresh_token" {
+			tokenX = c
+		}
+	}
+
+	// X → Y.
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenX})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh X: %s", rec.Body.String())
+	}
+	tokenY := refreshCookieDariResponse(rec)
+
+	var familyID string
+	var tokenYID string
+	err := pool.QueryRow(context.Background(), `
+		SELECT id, family_id
+		FROM refresh_tokens
+		WHERE family_id = (
+			SELECT family_id FROM refresh_tokens
+			WHERE user_id = (SELECT id FROM users WHERE email = $1)
+			LIMIT 1
+		) AND replaced_by IS NULL AND revoked_at IS NULL
+	`, email).Scan(&tokenYID, &familyID)
+	if err != nil {
+		t.Fatalf("ambil Y: %v", err)
+	}
+
+	// Mundurkan Y.created_at > 2 detik, supaya cabang 2a fire.
+	_, err = pool.Exec(context.Background(), `
+		UPDATE refresh_tokens SET created_at = now() - INTERVAL '5 seconds' WHERE id = $1`,
+		tokenYID)
+	if err != nil {
+		t.Fatalf("mundurkan Y: %v", err)
+	}
+
+	// Refresh X → cabang 2a: Y dicabut, Z dibuat, X.replaced_by = Z.
+	logBuf.Reset()
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenX})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh X untuk recoveri: %s", rec.Body.String())
+	}
+	_ = refreshCookieDariResponse(rec)
+
+	// Y.revoked_at != NULL (set oleh 2a), Y.replaced_by = NULL.
+	// Z adalah token aktif di keluarga. Y masuk cabang b (X.replaced_by
+	// == NULL dan keluarga tidak kosong) → reuse, log, keluarga dicabut.
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenY})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("Y dalam grace setelah 2a: %d, mau 401, body=%s", rec.Code, rec.Body.String())
+	}
+	if kodeError(t, rec) != "REFRESH_TOKEN_REUSED" {
+		t.Errorf("code = %s, mau REFRESH_TOKEN_REUSED", kodeError(t, rec))
+	}
+	if !strings.Contains(logBuf.String(), "refresh token reuse terdeteksi") {
+		t.Errorf("log peringatan reuse tidak ada. Log:\n%s", logBuf.String())
+	}
+
+	// Keluarga dicabut.
+	var aktif int
+	err = pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM refresh_tokens
+		WHERE family_id = $1 AND revoked_at IS NULL`, familyID).Scan(&aktif)
+	if err != nil {
+		t.Fatalf("hitung aktif: %v", err)
+	}
+	if aktif != 0 {
+		t.Errorf("token aktif = %d, mau 0", aktif)
+	}
+}
+
+// token penerus yang dicabut oleh cabang 2a (recoveri), ketika dikirim
+// lagi DALAM grace, langsung kena cabang 4 (tanpa penerus) → 401
+// REFRESH_TOKEN_REUSED. Penerus tidak pernah dirotasi sendiri, jadi
+// replaced_by-nya NULL sejak dibuat, dan cabang 4 aktif tanpa peduli
+// selisih waktu.
+func TestRefresh_PenerusDicabut2a_DalamGrace_Reuse(t *testing.T) {
+	h := serverLengkap(t)
+	pool := dbUji(t)
+	email := emailUnik("penerus2a-grace")
+	password := "password-yang-cukup-panjang"
+
+	rec := kirim(t, h, http.MethodPost, "/api/v1/auth/register", map[string]string{
+		"email": email, "password": password, "full_name": "Test",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("register: %s", rec.Body.String())
+	}
+	rec = kirim(t, h, http.MethodPost, "/api/v1/auth/login", map[string]string{
+		"email": email, "password": password,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: %s", rec.Body.String())
+	}
+	var tokenX *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "refresh_token" {
+			tokenX = c
+		}
+	}
+
+	// X -> Y, ambil cookie Y (akan dikirim lagi di akhir).
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenX})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh X: %s", rec.Body.String())
+	}
+	tokenY := refreshCookieDariResponse(rec)
+
+	var familyID string
+	var tokenYID string
+	err := pool.QueryRow(context.Background(), `
+		SELECT id, family_id
+		FROM refresh_tokens
+		WHERE family_id = (
+			SELECT family_id FROM refresh_tokens
+			WHERE user_id = (SELECT id FROM users WHERE email = $1)
+			LIMIT 1
+		) AND replaced_by IS NULL AND revoked_at IS NULL
+	`, email).Scan(&tokenYID, &familyID)
+	if err != nil {
+		t.Fatalf("ambil Y: %v", err)
+	}
+
+	// Mundurkan Y lewat 2 detik supaya cabang 2a fire pada refresh X
+	// berikutnya (lost-response scenario).
+	_, err = pool.Exec(context.Background(), `
+		UPDATE refresh_tokens SET created_at = now() - INTERVAL '5 seconds' WHERE id = $1`,
+		tokenYID)
+	if err != nil {
+		t.Fatalf("mundurkan Y: %v", err)
+	}
+
+	// Refresh X → cabang 2a. Y dicabut, Z jadi pengganti X. Y.replaced_by
+	// tetap NULL (Y tidak pernah dirotasi sendiri).
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenX})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh X untuk recoveri: %s", rec.Body.String())
+	}
+	_ = refreshCookieDariResponse(rec)
+
+	// Y.revoked_at di-set ke now() (oleh cabang 2a), Y.replaced_by = NULL.
+	// Kirim Y DALAM grace (beberapa milidetik setelah cabang 2a) — cabang 4
+	// aktif (Y.replaced_by == NULL) → 401 REFRESH_TOKEN_REUSED.
+	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenY})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("Y dalam grace setelah 2a: status = %d, mau 401, body = %s", rec.Code, rec.Body.String())
+	}
+	if kodeError(t, rec) != "REFRESH_TOKEN_REUSED" {
+		t.Errorf("code = %s, mau REFRESH_TOKEN_REUSED", kodeError(t, rec))
+	}
+
+	// Keluarga dicabut — token aktif tinggal 0.
+	var aktif int
+	err = pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM refresh_tokens
+		WHERE family_id = $1 AND revoked_at IS NULL`, familyID).Scan(&aktif)
+	if err != nil {
+		t.Fatalf("hitung aktif: %v", err)
+	}
+	if aktif != 0 {
+		t.Errorf("token aktif = %d, mau 0 (keluarga harus dicabut oleh cabang 4)", aktif)
+	}
+}
+
 func TestLogout_CabutToken(t *testing.T) {
 	h := serverLengkap(t)
 	_, refreshCookie := loginLengkap(t, h)
@@ -1425,4 +1849,29 @@ func refreshCookieDariResponse(rec *httptest.ResponseRecorder) *http.Cookie {
 	}
 	// Return dummy cookie untuk debugging, test yang butuh ini akan gagal dengan jelas
 	return &http.Cookie{Name: "refresh_token", Value: ""}
+}
+
+// replacedBySnapshot mengembalikan peta id_token -> replaced_by untuk
+// satu keluarga. Dipakai untuk verifikasi bahwa logout tidak
+// menyentuh kolom replaced_by.
+func replacedBySnapshot(t *testing.T, pool *pgxpool.Pool, familyID string) map[string]*string {
+	t.Helper()
+	rows, err := pool.Query(context.Background(), `
+		SELECT id::text, replaced_by::text
+		FROM refresh_tokens
+		WHERE family_id = $1`, familyID)
+	if err != nil {
+		t.Fatalf("snapshot replaced_by: %v", err)
+	}
+	defer rows.Close()
+	out := make(map[string]*string)
+	for rows.Next() {
+		var id string
+		var rb *string
+		if err := rows.Scan(&id, &rb); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		out[id] = rb
+	}
+	return out
 }
