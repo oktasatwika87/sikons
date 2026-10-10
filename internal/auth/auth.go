@@ -36,9 +36,23 @@ var (
 // dari sesi yang sama (misalnya: tab browser berbeda).
 var RefreshGracePeriod = 30 * time.Second
 
-// gracePeriod adalah variabel yang bisa di-overwrite oleh test.
-// Pola sama dengan bcryptCost.
+// RefreshSuccessorMinAge adalah umur minimum pengganti token agar dianggap
+// "kemungkinan balasan hilang" (kasus halaman di-reload, server commit tapi
+// cookie baru tidak sampai ke browser). Di bawah umur ini, request yang
+// mengirim ulang token lama tetap dianggap balapan wajar → 409.
+//
+// Alasan 2 detik: request dari tab lain datang dalam hitungan milidetik
+// (jauh di bawah 1 detik), sedangkan balasan yang hilang baru dikirim
+// ulang di page load berikutnya — yaitu setelah halaman selesai di-render
+// dan JavaScript AuthContext berjalan, yang memakan waktu ratusan
+// milidetik sampai beberapa detik pada jaringan lambat. Batas 2 detik
+// cukup lebar untuk tab paralel, cukup ketat untuk "balasan hilang".
+const RefreshSuccessorMinAge = 2 * time.Second
+
+// gracePeriod dan successorMinAge adalah variabel yang bisa di-overwrite
+// oleh test. Pola sama dengan bcryptCost.
 var gracePeriod = RefreshGracePeriod
+var successorMinAge = RefreshSuccessorMinAge
 
 // SetGracePeriodUntukTest menimpa grace period untuk keperluan test.
 // Harus dipanggil di awal setiap test yang butuh nilai non-standar.
@@ -46,11 +60,14 @@ func SetGracePeriodUntukTest(d time.Duration) {
 	gracePeriod = d
 }
 
-// ResetGracePeriodMengambang mengembalikan grace period ke nilai default.
-// Test yang memanggil SetGracePeriodUntukTest bertanggung jawab memanggil ini
-// di deferred cleanup — pola yang sama dengan SetBcryptCostUntukTest.
-func ResetGracePeriodMengambang() {
-	gracePeriod = RefreshGracePeriod
+// SetSuccessorMinAgeUntukTest menimpa successor min age untuk test.
+func SetSuccessorMinAgeUntukTest(d time.Duration) {
+	successorMinAge = d
+}
+
+// ResetSuccessorMinAgeMengambang mengembalikan successor min age ke default.
+func ResetSuccessorMinAgeMengambang() {
+	successorMinAge = RefreshSuccessorMinAge
 }
 
 // Identity adalah siapa si pemanggil, hasil pembacaan token.

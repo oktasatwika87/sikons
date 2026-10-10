@@ -209,27 +209,19 @@ func (s *Service) IssueRefreshToken(ctx context.Context, userID, userAgent strin
 
 // RotateRefreshToken memutar token dalam satu transaksi.
 //
-// Semua operasi (SELECT FOR UPDATE, revoke, INSERT+UPDATE token baru) berada
-// di dalam SATU transaksi eksplisit. Ini wajib: kalau terpisah, row lock
-// dilepas saat implicit commit, dan dua request berbarengan bisa sama-sama
-// melihat token "belum dicabut", sama-sama membuat token baru, hasilnya 2
-// token aktif dalam satu family.
-//
-// Deteksi reuse dua lapis:
-//
-//  1. Kalau token belum di-revoke: rotasi biasa, buat token baru.
-//     Kalau dua request berbarengan, yang pertama menang, yang kedua
-//     melihat token sudah di-revoke oleh si pemenang.
-//
-//  2. Token sudah di-revoke:
-//     - Ambil juga replaced_by di SELECT yang sama.
-//     - Cek penerus: kalau ada, revoked_at-nya apa?
-//     - BALAPAN WAJAR: penerus ada AND revoked_at-nya NULL
-//     AND now() - revoked_at_token_ini <= grace period
-//     → JANGAN cabut family, kembalikan ErrRefreshInProgress
-//     - PENCURIAN: selain itu
-//     → Cabut seluruh family, commit, log Warn, kembalikan
-//     ErrRefreshTokenReused
+// Aturan saat ini:
+//  1. X aktif → rotasi X ke Y. Simpan X.replaced_by = Y.
+//  2. X sudah dicabut (revoked_at != NULL) — masih dalam grace period:
+//     a. Penerus (Y) masih aktif DAN umurnya >= RefreshSuccessorMinAge
+//     (default 2 detik): cabut Y, terbitkan token baru Z dari X,
+//     catat Z sebagai pengganti X. Balas 200. Ini memperbaiki skenario
+//     "balasan refresh hilang" — server commit tapi cookie baru tidak
+//     sampai ke browser, dan browser mengirim ulang token lama di
+//     page load berikutnya.
+//     b. Selain itu (penerus null, penerus sudah dicabut, atau penerus
+//     masih terlalu muda): 409 REFRESH_IN_PROGRESS. Pemenangnya akan
+//     menyelesaikan rotasi dengan benar.
+//  3. X sudah dicabut DAN lewat grace → reuse. Cabut seluruh keluarga.
 //
 // Commit WAJIB saat pencurian terdeteksi — pencabutannya harus tersimpan,
 // bukan di-rollback. ErrRefreshTokenReused juga di-log di level Warn
@@ -238,6 +230,11 @@ func (s *Service) IssueRefreshToken(ctx context.Context, userID, userAgent strin
 // CATATAN TTL: 30 hari sliding. Alternatifnya absolute cap (30 hari dari login
 // pertama, tidak peduli berapa kali di-refresh). Sliding dipilih karena lebih
 // user-friendly — selama aktif, sesi tidak pernah kedaluwarsa tanpa sebab.
+//
+// INVARIAN: pada setiap saat, maksimal SATU token aktif per keluarga.
+// Dilindungi oleh FOR UPDATE pada baris X + INSERT/UPDATE dalam transaksi
+// yang sama. Pada kasus 2a, penerus lama di-revoke sebelum token baru
+// diterbitkan, jadi keluarga tetap punya tepat satu token aktif.
 func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent string) (string, string, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(plaintext)
 	if err != nil {
@@ -277,50 +274,88 @@ func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent s
 	}
 
 	if revokedAt != nil {
-		// Token sudah di-revoke — cek apakah ini balapan wajar atau pencurian.
+		selisihGrace := time.Since(*revokedAt)
+
+		// Lewat grace → pencurian. Cabut seluruh keluarga. Boleh tanpa
+		// successor (kasus 2a bisa meninggalkan Y.replaced_by NULL) atau
+		// dengan successor (kasus Y→Z, atau Z aktif di kasus 2a).
+		if selisihGrace > gracePeriod {
+			_, err := tx.Exec(ctx, `
+				UPDATE refresh_tokens
+				SET revoked_at = now()
+				WHERE family_id = $1 AND revoked_at IS NULL`,
+				familyID,
+			)
+			if err != nil {
+				return "", "", fmt.Errorf("mencabut family saat reuse: %w", err)
+			}
+			// Commit WAJIB: pencabutannya harus permanen, bukan di-rollback.
+			// Ini yang membedakan reuse detection yang berfungsi dari yang
+			// menyesatkan — tanpa commit, database mengira tidak terjadi apa-apa.
+			if err := tx.Commit(ctx); err != nil {
+				return "", "", fmt.Errorf("commit pencabutan family saat reuse: %w", err)
+			}
+			s.log.Warn("refresh token reuse terdeteksi",
+				slog.String("user_id", userID),
+				slog.String("family_id", familyID))
+			return "", "", ErrRefreshTokenReused
+		}
+
+		// Masih dalam grace. Cek penerus untuk kasus 2a.
 		if replacedBy != nil {
-			// Ada penerus — cek apakah penerus masih aktif dan dalam grace period.
 			var penerusRevokedAt *time.Time
+			var penerusCreatedAt time.Time
 			err = tx.QueryRow(ctx, `
-				SELECT revoked_at FROM refresh_tokens WHERE id = $1`,
+				SELECT created_at, revoked_at FROM refresh_tokens WHERE id = $1`,
 				*replacedBy,
-			).Scan(&penerusRevokedAt)
+			).Scan(&penerusCreatedAt, &penerusRevokedAt)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return "", "", fmt.Errorf("membaca penerus token: %w", err)
 			}
 
-			// BALAPAN WAJAR: penerus ada, revoked_at-nya NULL, dan masih dalam grace period.
-			if penerusRevokedAt == nil {
-				selisih := time.Since(*revokedAt)
-				if selisih <= gracePeriod {
-					// Balapan wajar — JANGAN cabut family, jangan commit.
-					// Kembalikan ErrRefreshInProgress agar caller tahu untuk retry.
-					return "", "", ErrRefreshInProgress
+			// Kasus 2a: penerus masih aktif DAN umurnya cukup → balasan
+			// refresh sebelumnya kemungkinan hilang. Cabut penerus, terbitkan
+			// token baru yang menjadi pengganti X.
+			if penerusRevokedAt == nil && time.Since(penerusCreatedAt) >= successorMinAge {
+				newPlaintext, newID, err := s.issueNewInTx(ctx, tx, userID, familyID, userAgent)
+				if err != nil {
+					return "", "", err
 				}
+				// Tandai penerus lama di-revoke (untuk invariants DB).
+				_, err = tx.Exec(ctx, `
+					UPDATE refresh_tokens
+					SET revoked_at = now()
+					WHERE id = $1`,
+					*replacedBy,
+				)
+				if err != nil {
+					return "", "", fmt.Errorf("mencabut penerus saat recoveri: %w", err)
+				}
+				// X.replaced_by menunjuk ke token baru. Penerus lama (Y)
+				// TIDAK kita isi replaced_by — biarkan NULL, sama seperti
+				// Y dibuat tanpa successor oleh rotasi normal. Dengan begitu
+				// Y yang dikirim ulang setelah grace jatuh ke "no successor
+				// past grace" → reuse.
+				_, err = tx.Exec(ctx, `
+					UPDATE refresh_tokens
+					SET replaced_by = $1
+					WHERE id = $2`,
+					newID, rowID,
+				)
+				if err != nil {
+					return "", "", fmt.Errorf("memperbarui replaced_by X: %w", err)
+				}
+				if err := tx.Commit(ctx); err != nil {
+					return "", "", fmt.Errorf("commit recoveri: %w", err)
+				}
+				return newPlaintext, userID, nil
 			}
 		}
 
-		// PENCURIAN: penerus tidak ada, penerus sudah dicabut, atau sudah lewat grace.
-		// Cabut seluruh family.
-		_, err := tx.Exec(ctx, `
-			UPDATE refresh_tokens
-			SET revoked_at = now()
-			WHERE family_id = $1 AND revoked_at IS NULL`,
-			familyID,
-		)
-		if err != nil {
-			return "", "", fmt.Errorf("mencabut family saat reuse: %w", err)
-		}
-		// Commit WAJIB: pencabutannya harus permanen, bukan di-rollback.
-		// Ini yang membedakan reuse detection yang berfungsi dari yang
-		// menyesatkan — tanpa commit, database mengira tidak terjadi apa-apa.
-		if err := tx.Commit(ctx); err != nil {
-			return "", "", fmt.Errorf("commit pencabutan family saat reuse: %w", err)
-		}
-		s.log.Warn("refresh token reuse terdeteksi",
-			slog.String("user_id", userID),
-			slog.String("family_id", familyID))
-		return "", "", ErrRefreshTokenReused
+		// Kasus 2b: tidak ada penerus, atau penerus sudah dicabut, atau
+		// penerus masih terlalu muda. Balapan wajar — JANGAN cabut family,
+		// JANGAN commit. Kembalikan ErrRefreshInProgress agar caller retry.
+		return "", "", ErrRefreshInProgress
 	}
 
 	// Periksa apakah sudah lewat expires_at
@@ -328,24 +363,9 @@ func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent s
 		return "", "", ErrRefreshTokenExpired
 	}
 
-	// Buat token baru dengan family_id yang SAMA, dapat ID-nya via RETURNING.
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", "", fmt.Errorf("membuat token: %w", err)
-	}
-	hashBaru := sha256.Sum256(bytes)
-	plaintextBaru := base64.RawURLEncoding.EncodeToString(bytes)
-	expiresAtBaru := time.Now().Add(RefreshTokenTTL)
-
-	var idBaru string
-	err = tx.QueryRow(ctx, `
-		INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at, user_agent)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id`,
-		userID, hashBaru[:], familyID, expiresAtBaru, userAgent,
-	).Scan(&idBaru)
+	plaintextBaru, idBaru, err := s.issueNewInTx(ctx, tx, userID, familyID, userAgent)
 	if err != nil {
-		return "", "", fmt.Errorf("menyimpan token baru: %w", err)
+		return "", "", err
 	}
 
 	// Update token lama: tandai revoked_at dan replaced_by.
@@ -366,9 +386,41 @@ func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent s
 	return plaintextBaru, userID, nil
 }
 
+// issueNewInTx membuat token refresh baru di dalam transaksi yang sudah
+// berjalan. Dipakai oleh alur rotasi normal dan oleh alur recoveri (kasus 2a).
+// Tidak commit — caller yang memutuskan kapan COMMIT.
+func (s *Service) issueNewInTx(ctx context.Context, tx pgx.Tx, userID, familyID, userAgent string) (string, string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", "", fmt.Errorf("membuat token: %w", err)
+	}
+	hashBaru := sha256.Sum256(bytes)
+	plaintextBaru := base64.RawURLEncoding.EncodeToString(bytes)
+	expiresAtBaru := time.Now().Add(RefreshTokenTTL)
+
+	var idBaru string
+	err := tx.QueryRow(ctx, `
+		INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at, user_agent)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		userID, hashBaru[:], familyID, expiresAtBaru, userAgent,
+	).Scan(&idBaru)
+	if err != nil {
+		return "", "", fmt.Errorf("menyimpan token baru: %w", err)
+	}
+	return plaintextBaru, idBaru, nil
+}
+
 // RevokeRefreshToken mencabut seluruh family dari token yang diberikan.
 // Dipakai saat logout. Cukup SATU statement dengan subquery — tidak perlu
 // SELECT terpisah.
+//
+// revoked_at di-set ke now() - 1 jam, bukan now() langsung. Ini
+// supaya refresh berikutnya (kalau ada) langsung kena cabang 3 (lewat
+// grace) → 401 REFRESH_TOKEN_REUSED, bukan cabang 2 (dalam grace) → 409
+// REFRESH_IN_PROGRESS. Tanpa backdate ini, user yang logout baru
+// saja masih bisa pakai token aktif lain di keluarganya sampai 30 detik
+// — regresi keamanan dari aturan cabang 2 yang baru.
 func (s *Service) RevokeRefreshToken(ctx context.Context, plaintext string) error {
 	decoded, err := base64.RawURLEncoding.DecodeString(plaintext)
 	if err != nil {
@@ -378,9 +430,8 @@ func (s *Service) RevokeRefreshToken(ctx context.Context, plaintext string) erro
 
 	_, err = s.pool.Exec(ctx, `
 		UPDATE refresh_tokens
-		SET revoked_at = now()
-		WHERE family_id = (SELECT family_id FROM refresh_tokens WHERE token_hash = $1)
-		  AND revoked_at IS NULL`,
+		SET revoked_at = now() - INTERVAL '1 hour'
+		WHERE family_id = (SELECT family_id FROM refresh_tokens WHERE token_hash = $1)`,
 		hash[:],
 	)
 	if err != nil {
