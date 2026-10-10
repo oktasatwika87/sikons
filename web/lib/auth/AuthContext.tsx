@@ -141,37 +141,59 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       const promise = (async (): Promise<RefreshResult> => {
-        try {
-          const data = await callRefresh();
+        // Pola retry saat dapat 409 REFRESH_IN_PROGRESS: jeda 500ms,
+        // kalau masih 409 jeda 2000ms, baru setAnonymous kalau gagal
+        // lagi. Backend bisa mengembalikan 409 saat rotasi "balasan
+        // hilang" sedang diproses (cabang 2a) — yaitu server commit
+        // tapi cookie baru tidak sampai browser. Browser mengirim
+        // ulang token lama, server butuh waktu untuk menyelesaikan
+        // rotasi. Jeda 500ms + 2000ms = 2.5 detik total, cukup untuk
+        // halaman di-render dan request kedua sampai.
+        const sleep = (ms: number) =>
+          new Promise((r) => setTimeout(r, ms));
+        const is409Err = (err: unknown): boolean =>
+          typeof err === "object" &&
+          err !== null &&
+          "code" in err &&
+          (err as { code: string }).code === "REFRESH_IN_PROGRESS";
+
+        const applySuccess = (data: { access_token: string; expires_at: string }) => {
           setAuth((prev) => ({
             ...prev,
             accessToken: data.access_token,
             expiresAt: new Date(data.expires_at),
           }));
-          return { ok: true, accessToken: data.access_token };
-        } catch (err: unknown) {
-          // 409 → tunggu sebentar lalu retry sekali
-          const is409 =
-            typeof err === "object" &&
-            err !== null &&
-            "code" in err &&
-            (err as { code: string }).code === "REFRESH_IN_PROGRESS";
+          return data.access_token;
+        };
 
-          if (is409) {
-            await new Promise((r) => setTimeout(r, 500));
-            try {
-              const data = await callRefresh();
-              setAuth((prev) => ({
-                ...prev,
-                accessToken: data.access_token,
-                expiresAt: new Date(data.expires_at),
-              }));
-              return { ok: true, accessToken: data.access_token };
-            } catch {
+        try {
+          const data = await callRefresh();
+          return { ok: true, accessToken: applySuccess(data) };
+        } catch (err: unknown) {
+          if (!is409Err(err)) {
+            setAnonymous();
+            return { ok: false };
+          }
+
+          // Retry pertama: 500ms.
+          await sleep(500);
+          try {
+            const data = await callRefresh();
+            return { ok: true, accessToken: applySuccess(data) };
+          } catch (err2: unknown) {
+            if (!is409Err(err2)) {
               setAnonymous();
               return { ok: false };
             }
-          } else {
+          }
+
+          // Retry kedua: 2000ms.
+          await sleep(2000);
+          try {
+            const data = await callRefresh();
+            return { ok: true, accessToken: applySuccess(data) };
+          } catch {
+            // Semua percobaan gagal — set anonymous.
             setAnonymous();
             return { ok: false };
           }

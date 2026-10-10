@@ -227,6 +227,7 @@ describe("useApiFetch", () => {
       refreshAfterBoot(() => {
         state.refreshCalls++;
         // Panggilan pertama: simulasi "sedang ada refresh lain" → 409.
+        // Retry berikutnya (setelah 500ms) → 200.
         if (state.refreshCalls === 1) {
           return HttpResponse.json(
             { error: { code: "REFRESH_IN_PROGRESS", message: "in progress" } },
@@ -263,11 +264,122 @@ describe("useApiFetch", () => {
     const elapsed = Date.now() - start;
 
     expect(result).toEqual({ data: "ok" });
-    // Retry refresh: 2 panggilan /auth/refresh (1 gagal 409, 1 sukses).
+    // Refresh: panggilan 1 dapat 409, panggilan 2 (setelah 500ms) sukses.
     expect(state.refreshCalls).toBe(2);
-    // Refresh pertama delay 500ms sebelum retry — minimal harus sudah lewat.
+    // Retry pertama delay 500ms sebelum retry — minimal harus sudah lewat.
     expect(elapsed).toBeGreaterThanOrEqual(450);
     // AuthContext TIDAK treat 409 sebagai anonymous — request asli tetap resolve.
+  });
+
+  it("409 REFRESH_IN_PROGRESS dua kali → retry kedua (2000ms) sukses", async () => {
+    const state = { refreshCalls: 0, endpointCalls: 0 };
+
+    server.use(
+      meHandler(),
+      refreshAfterBoot(() => {
+        state.refreshCalls++;
+        // Panggilan 1 dan 2: 409. Panggilan 3 (setelah 500+2000ms): 200.
+        if (state.refreshCalls <= 2) {
+          return HttpResponse.json(
+            { error: { code: "REFRESH_IN_PROGRESS", message: "in progress" } },
+            { status: 409 }
+          );
+        }
+        return HttpResponse.json({
+          access_token: "new-access",
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+        });
+      }),
+      http.get(`${BASE_URL}/protected`, () => {
+        state.endpointCalls++;
+        if (state.endpointCalls === 1) {
+          return HttpResponse.json(
+            { error: { code: "TOKEN_EXPIRED", message: "" } },
+            { status: 401 }
+          );
+        }
+        return HttpResponse.json({ data: "ok" });
+      })
+    );
+
+    const start = Date.now();
+    const result = await new Promise<unknown>((resolve, reject) => {
+      render(
+        <AuthProvider>
+          <ReadyChildren>
+            <FetchProbe path="/protected" onResult={resolve} onError={reject} />
+          </ReadyChildren>
+        </AuthProvider>
+      );
+    });
+    const elapsed = Date.now() - start;
+
+    expect(result).toEqual({ data: "ok" });
+    // 2 gagal 409 + 1 sukses = 3 panggilan /auth/refresh.
+    expect(state.refreshCalls).toBe(3);
+    // Jeda total 500 + 2000 = 2500ms minimum.
+    expect(elapsed).toBeGreaterThanOrEqual(2450);
+  });
+
+  it("409 REFRESH_IN_PROGRESS tiga kali → status anonymous + request throw UNAUTHENTICATED", async () => {
+    const state = { refreshCalls: 0 };
+    const statuses: string[] = [];
+
+    server.use(
+      meHandler(),
+      refreshAfterBoot(() => {
+        state.refreshCalls++;
+        // Selalu 409 — semua 3 percobaan gagal.
+        return HttpResponse.json(
+          { error: { code: "REFRESH_IN_PROGRESS", message: "in progress" } },
+          { status: 409 }
+        );
+      }),
+      http.get(`${BASE_URL}/protected`, () =>
+        HttpResponse.json(
+          { error: { code: "TOKEN_EXPIRED", message: "" } },
+          { status: 401 }
+        )
+      )
+    );
+
+    let capturedError: unknown = null;
+
+    render(
+      <AuthProvider>
+        <ReadyChildren>
+          <StatusRecorder onStatus={(s) => statuses.push(s)} />
+          <FetchProbe
+            path="/protected"
+            onResult={() => {}}
+            onError={(e) => {
+              capturedError = e;
+            }}
+          />
+        </ReadyChildren>
+      </AuthProvider>
+    );
+
+    // Total jeda 500 + 2000 = 2500ms sebelum setAnonymous. waitFor default
+    // 1000ms tidak cukup, jadi set timeout eksplisit.
+    await waitFor(
+      () => {
+        expect(capturedError).not.toBeNull();
+      },
+      { timeout: 5000 }
+    );
+
+    expect(capturedError).toBeInstanceOf(ApiError);
+    expect((capturedError as ApiError).code).toBe("UNAUTHENTICATED");
+    // 1 panggilan awal + 2 retry = 3 panggilan /auth/refresh.
+    expect(state.refreshCalls).toBe(3);
+    // AuthContext sudah anonymous.
+    await waitFor(
+      () => {
+        expect(statuses).toContain("anonymous");
+      },
+      { timeout: 5000 }
+    );
   });
 
   it("refresh gagal final (401) → status anonymous + request asli throw UNAUTHENTICATED", async () => {

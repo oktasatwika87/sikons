@@ -84,17 +84,23 @@ test.describe.serial("alur konsultasi E2E", () => {
 
     // 3. Reload halaman — harus TETAP login. Ini yang dites mutation
     //    kalau POST /auth/refresh dihapus dari bootstrap sesi.
+    //    JANGAN pakai page.waitForURL(/\/dosen/) — URL sudah cocok
+    //    sebelum reload karena /  langsung redirect ke /dosen lewat
+    //    RoleRedirect saat auth.authenticated. Yang kita tunggu
+    //    adalah konfirmasi bahwa bootstrap sesi SELESAI — yaitu
+    //    Nav menampilkan nama user (elemen yang hanya muncul kalau
+    //    auth.status === "authenticated" && auth.user). Tanpa ini,
+    //    klik slot di langkah 7 bisa kena 401 karena access token
+    //    belum tersedia di memory.
     await page.reload();
-    // Tunggu sampai redirect ke /dosen selesai (RoleRedirect menavigasi
-    // setelah bootstrap sesi /auth/refresh + /me). Kalau auth gagal,
-    // URL tetap di /login → cek itu.
-    await page.waitForURL(/\/dosen/, { timeout: 10_000 });
+    await expect(page.getByText(state.studentFullName)).toBeVisible({
+      timeout: 10_000,
+    });
 
-    // 4. Cari dosen demo dari seed di /dosen. Pakai kolom pencarian
-    //    (bukan page.goto dengan ?q=) supaya TIDAK menambah satu
-    //    page-load lagi — page-load tambahan bisa membuat refresh
-    //    token balapan dengan yang sudah berjalan (lihat RINGKASAN).
-    //    Tunggu sampai kolom pencarian terlihat.
+    // 4. Cari dosen demo dari seed di /dosen. Halaman saat ini adalah
+    //    /dosen (hasil redirect dari /). Pakai kolom pencarian supaya
+    //    tidak bergantung pada pagination dari entri "Dosen Test"
+    //    yang dibuat test lain sebelumnya.
     const searchInput = page.getByLabel("Nama");
     await expect(searchInput).toBeVisible();
     await searchInput.fill("Budi");
