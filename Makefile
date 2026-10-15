@@ -79,7 +79,7 @@ test-concurrency: ## Hanya test perebutan slot, dengan output verbose
 	go test ./internal/booking -race -count=1 -v -run 'Paralel|Sepuluh'
 
 test-cover: ## Test + laporan coverage di browser
-	go test ./... -race -coverprofile=coverage.out
+	go test ./... -race -coverpkg=./internal/... -coverprofile=coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "buka coverage.html"
 

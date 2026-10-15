@@ -162,9 +162,11 @@ jobs:
 
       # Coverage bukan gate, hanya info di job summary. Tes sudah divalidasi
       # oleh Guard 1-3 di atas; coverage ditambahkan untuk visibilitas saja.
+      # -coverpkg=./internal/... supaya fungsi yang dites dari paket lain
+      # (mis. service auth yang dites lewat internal/server) ikut terhitung.
       - name: Coverage ringkasan
         run: |
-          go test ./... -coverprofile=/tmp/coverage.out -count=1
+          go test ./... -coverpkg=./internal/... -coverprofile=/tmp/coverage.out -count=1
           go tool cover -func=/tmp/coverage.out | tee "$GITHUB_STEP_SUMMARY"
 
   frontend:
