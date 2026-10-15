@@ -202,6 +202,122 @@ jobs:
       - name: Build
         run: npm run build
 
+  e2e:
+    name: E2E
+    needs: [backend, frontend]
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sikons_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Port 5432 (default kontainer), bukan 5433 seperti Postgres lokal.
+      DATABASE_URL: "postgres://postgres:postgres@localhost:5432/sikons_test?sslmode=disable"
+      # Cookie refresh terikat host: pakai localhost di semua URL (CORS, baseURL, webServer.url, NEXT_PUBLIC_API_URL).
+      NEXT_PUBLIC_API_URL: "http://localhost:8080/api/v1"
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+      HTTP_PORT: "8080"
+      APP_ENV: "development"
+      # Kredensial dosen demo (lihat cmd/seed/main.go). Default di spec sama.
+      E2E_DOSEN_EMAIL: "budi@sikons.test"
+      E2E_DOSEN_PASSWORD: "password123"
+      E2E_DOSEN_NAME: "Dr. Budi Santoso"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      # Pasang psql + migrate CLI langsung (tanpa docker compose, seperti job backend).
+      - name: Pasang postgres client + migrate CLI
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null 2>&1
+          until pg_isready -h localhost -p 5432 -U postgres 2>/dev/null; do sleep 1; done
+          curl -fsSL -o /tmp/migrate.tgz \
+            https://github.com/golang-migrate/migrate/releases/download/v4.17.1/migrate.linux-amd64.tar.gz
+          tar -xzf /tmp/migrate.tgz -C /tmp && sudo mv /tmp/migrate /usr/local/bin/migrate
+          migrate -version
+
+      - name: Migrasi schema
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE sikons_test;" 2>/dev/null || true
+          migrate -path=migrations -database="$DATABASE_URL" -verbose up
+
+      # JWT_SECRET dibangkitkan saat job jalan, bukan nilai tetap di YAML.
+      - name: Generate JWT secret
+        run: echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      # make seed & generate-slots = go run ./cmd/...; tidak butuh docker compose, DATABASE_URL diwarisi otomatis.
+      - name: Seed data demo
+        run: make seed
+
+      - name: Generate slot untuk dosen aktif
+        run: make generate-slots
+
+      - name: Build api binary
+        run: |
+          mkdir -p bin
+          go build -o bin/api ./cmd/api
+
+      - name: Install dependensi web
+        working-directory: web
+        run: npm ci
+
+      # --with-deps memasang dependency OS (libnss3, libxkbcommon) yang dibutuhkan Chromium.
+      - name: Install browser Playwright
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Build Next.js
+        working-directory: web
+        run: npm run build
+
+      # webServer di config menyalakan api + next start; reuseExistingServer false di CI; env dari process.env diwarisi ke keduanya.
+      - name: Jalankan Playwright
+        working-directory: web
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
+
+      - name: Upload test-results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: web/test-results
+          retention-days: 7
+
   # ── Repo lint ──────────────────────────────────────────────────────────────
   repo-lint:
     name: Repo lint
