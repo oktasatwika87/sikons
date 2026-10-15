@@ -347,8 +347,8 @@ func TestReminderFailed_AfterMaxAttempts(t *testing.T) {
 // semua pending dan ikut memproses baris dari test lain di database bersama.
 //
 // MUTATION TEST:
-//  1. Comment out FOR UPDATE SKIP LOCKED di reminder.go pada query
-//     processNotification (baris ~198) DAN pada query di processBatch.
+//  1. Comment out `FOR UPDATE SKIP LOCKED` di reminder.go pada
+//     claimNotificationRows (satu-satunya titik klaim reminder).
 //  2. Jalankan: go test ./internal/reminder -v -run TestReminderConcurrencyVerify_SKIP_LOCKED
 //  3. Tanpa lock, MVCC READ COMMITTED membuat B melihat baris yang sama
 //     dengan A (tidak ada lock) dan ikut memproses. Dengan FakeSender

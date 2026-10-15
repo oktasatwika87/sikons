@@ -67,7 +67,7 @@ func (s *Service) Run(ctx context.Context) error {
 //
 // BACAAN untuk integration test: query ini memilih SEMUA notification pending
 // yang due (LIMIT 20), bukan satu per test. Test yang ingin deterministik
-// harus pakai processNotification(ctx, id): lihat catatan di integration test.
+// harus pakai processNotification(ctx, id), lihat catatan di integration test.
 func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -75,35 +75,9 @@ func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 	}
 	defer tx.Rollback(ctx)
 
-	// Ambil baris notification yang sudah waktunya.
-	// FOR UPDATE SKIP LOCKED: kalau ada worker lain yang sedang memproses baris
-	// yang sama, skip baris itu (bukan tunggu). Ini mencegah dua worker
-	// memproses notifikasi yang sama secara bersamaan.
-	rows, err := tx.Query(ctx, `
-		SELECT n.id::text, n.booking_id::text, n.attempts
-		FROM notifications n
-		WHERE n.type = 'booking_reminder'
-		  AND n.status = 'pending'
-		  AND n.scheduled_at <= now()
-		ORDER BY n.scheduled_at
-		LIMIT 20
-		FOR UPDATE SKIP LOCKED`)
+	rowsToProcess, err := s.claimNotificationRows(ctx, tx, "")
 	if err != nil {
-		return 0, fmt.Errorf("query notifications: %w", err)
-	}
-
-	var rowsToProcess []notifRow
-	for rows.Next() {
-		var r notifRow
-		if err := rows.Scan(&r.id, &r.bookingID, &r.attempts); err != nil {
-			rows.Close()
-			return 0, fmt.Errorf("scan row: %w", err)
-		}
-		rowsToProcess = append(rowsToProcess, r)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("rows error: %w", err)
+		return 0, err
 	}
 
 	for _, r := range rowsToProcess {
@@ -137,11 +111,10 @@ func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 
 // processNotification memproses SATU notification berdasarkan id.
 //
-// Dipakai oleh:
-//   - integration test, supaya setiap test memproses hanya baris miliknya
-//     sendiri dan tidak ikut memproses baris pending milik test lain di
-//     database uji bersama.
-//   - production (cadangan) untuk retry manual atau trigger spesifik.
+// Dipakai oleh integration test, supaya setiap test memproses hanya baris
+// miliknya sendiri dan tidak ikut memproses baris pending milik test lain
+// di database uji bersama. production (cadangan) bisa pakai ini juga untuk
+// retry manual atau trigger spesifik.
 //
 // Return 1 kalau notification ditemukan dan diproses (status apapun:
 // sent / failed / skipped). Return 0 kalau tidak ada baris cocok: bisa
@@ -157,42 +130,73 @@ func (s *Service) processNotification(ctx context.Context, notificationID string
 	}
 	defer tx.Rollback(ctx)
 
-	rows, err := tx.Query(ctx, `
-		SELECT n.id::text, n.booking_id::text, n.attempts
-		FROM notifications n
-		WHERE n.id = $1::uuid
-		  AND n.type = 'booking_reminder'
-		  AND n.status = 'pending'
-		  AND n.scheduled_at <= now()
-		FOR UPDATE SKIP LOCKED`, notificationID)
+	rows, err := s.claimNotificationRows(ctx, tx, notificationID)
 	if err != nil {
-		return 0, fmt.Errorf("query notification: %w", err)
+		return 0, err
 	}
-
-	var row notifRow
-	found := false
-	for rows.Next() {
-		if err := rows.Scan(&row.id, &row.bookingID, &row.attempts); err != nil {
-			rows.Close()
-			return 0, fmt.Errorf("scan row: %w", err)
-		}
-		found = true
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("rows error: %w", err)
-	}
-	if !found {
+	if len(rows) == 0 {
 		return 0, nil
 	}
 
-	if err := s.processNotificationInTx(ctx, tx, row); err != nil {
+	if err := s.processNotificationInTx(ctx, tx, rows[0]); err != nil {
 		return 1, fmt.Errorf("process notification: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 1, fmt.Errorf("commit: %w", err)
 	}
 	return 1, nil
+}
+
+// claimNotificationRows adalah SATU sumber query klaim. Dipakai oleh
+// processBatch (notificationID == "") dan processNotification (id diberikan).
+//
+// filter id opsional: kalau notificationID kosong, query memilih semua
+// baris due; kalau ada, query memilih baris dengan id itu saja. LIMIT dan
+// ORDER BY tetap ada di kedua kasus; untuk id tunggal hasilnya tetap 0
+// atau 1 baris, jadi LIMIT 20 dan ORDER BY tidak mengubah hasil.
+//
+// FOR UPDATE SKIP LOCKED adalah satu-satunya titik penguncian klaim
+// reminder. Hapus/komentari baris ini dan test konkurensi reminder
+// akan gagal (lihat TestReminderConcurrencyVerify_SKIP_LOCKED di
+// reminder_integration_test.go untuk mutation test).
+func (s *Service) claimNotificationRows(ctx context.Context, tx pgx.Tx, notificationID string) ([]notifRow, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT n.id::text, n.booking_id::text, n.attempts
+		FROM notifications n
+		WHERE n.type = 'booking_reminder'
+		  AND n.status = 'pending'
+		  AND n.scheduled_at <= now()
+		  AND ($1::uuid IS NULL OR n.id = $1::uuid)
+		ORDER BY n.scheduled_at
+		LIMIT 20
+		FOR UPDATE SKIP LOCKED`, nullableUUID(notificationID))
+	if err != nil {
+		return nil, fmt.Errorf("query notifications: %w", err)
+	}
+	defer rows.Close()
+
+	var out []notifRow
+	for rows.Next() {
+		var r notifRow
+		if err := rows.Scan(&r.id, &r.bookingID, &r.attempts); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	return out, nil
+}
+
+// nullableUUID mengubah string kosong menjadi nil supaya $1 di SQL bisa
+// menerima NULL, yang menonaktifkan filter id. String lain lewat apa adanya
+// dan pgx mengkonversi ke uuid.
+func nullableUUID(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // processNotificationInTx berisi logika inti: ambil data booking via JOIN,
