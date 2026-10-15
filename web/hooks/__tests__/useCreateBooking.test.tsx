@@ -1,5 +1,5 @@
 /**
- * Test useCreateBooking — error handling + idempotency key.
+ * Test useCreateBooking: error handling + idempotency key.
  *
  * Test paling penting: Idempotency-Key SAMA di request pertama dan retry
  * (tanpa menutup dialog). Ini analog dengan single-flight test di useApiFetch.
@@ -118,7 +118,7 @@ describe("useCreateBooking", () => {
     expect(result).toHaveProperty("id");
   });
 
-  it("SLOT_ALREADY_BOOKED → error received", async () => {
+  it("SLOT_ALREADY_BOOKED -> error received", async () => {
     server.use(
       ...meHandler(),
       http.post(`${BASE_URL}/bookings`, () =>
@@ -150,7 +150,7 @@ describe("useCreateBooking", () => {
     expect(result).toEqual({ type: "already_booked", message: "Slot sudah dipesan orang lain" });
   });
 
-  it("SLOT_TOO_SOON → error received", async () => {
+  it("SLOT_TOO_SOON -> error received", async () => {
     server.use(
       ...meHandler(),
       http.post(`${BASE_URL}/bookings`, () =>
@@ -182,7 +182,7 @@ describe("useCreateBooking", () => {
     expect(result).toEqual({ type: "lead_time", message: "Minimal 60 menit sebelum konsultasi" });
   });
 
-  it("BOOKING_LIMIT_REACHED → error received", async () => {
+  it("BOOKING_LIMIT_REACHED -> error received", async () => {
     server.use(
       ...meHandler(),
       http.post(`${BASE_URL}/bookings`, () =>

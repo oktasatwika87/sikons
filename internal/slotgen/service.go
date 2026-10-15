@@ -59,7 +59,7 @@ func New(pool *pgxpool.Pool, campusTZ *time.Location, horizonDays int) *Service 
 // menguji perilaku di jendela UTC vs kampus yang berbeda tanggal
 // (misal 17:50-24:00 UTC). Pola sama dengan auth.TokenIssuer.
 //
-// Hanya untuk test — namanya sengaja dibuat panjang dan canggung supaya
+// Hanya untuk test: namanya sengaja dibuat panjang dan canggung supaya
 // tidak ada yang memakainya di kode produksi tanpa sadar.
 func (s *Service) SetJamUntukTest(jam func() time.Time) { s.jam = jam }
 
@@ -353,7 +353,7 @@ func kunciSlot(t time.Time) int64 {
 }
 
 // syncSlots menyinkronkan slot: insert yang belum ada, delete/update yang tidak seharusnya ada.
-// nowUTC adalah batas waktu "masa lalu" — slot dengan start_at <= nowUTC tidak disentuh.
+// nowUTC adalah batas waktu "masa lalu": slot dengan start_at <= nowUTC tidak disentuh.
 func (s *Service) syncSlots(ctx context.Context, tx pgx.Tx, lecturerID string, from, to, nowUTC time.Time, shouldExist []slotSpec, log *slog.Logger) (created, deleted, withdrawn, restored, bookingsCancelled int, err error) {
 	// Baca semua slot dosen dalam rentang, tapi HANYA yang start_at > nowUTC.
 	// Slot masa lalu tidak disentuh sama sekali.
@@ -405,7 +405,7 @@ func (s *Service) syncSlots(ctx context.Context, tx pgx.Tx, lecturerID string, f
 	//
 	// Slot yang ada di shouldExist adalah SAH, apa pun status dan isi
 	// withdraw-nya. Jangan menitipkan slot sah ke loop pembersihan di bawah
-	// — loop itu hanya untuk slot yang benar-benar tidak ada di shouldExist,
+	//: loop itu hanya untuk slot yang benar-benar tidak ada di shouldExist,
 	// dan kalau slot sah jatuh ke sana, booking confirmed milik mahasiswa
 	// akan dibatalkan tanpa alasan. SELALU hapus dari existingMap di akhir.
 	for _, slot := range shouldExist {
@@ -455,7 +455,7 @@ func (s *Service) syncSlots(ctx context.Context, tx pgx.Tx, lecturerID string, f
 	//
 	// AMAN: query SELECT di awal sudah membatasi `start_at > $4` (nowUTC),
 	// jadi slot masa lalu tidak pernah sampai ke blok ini. Tidak perlu
-	// perlindungan kedua — satu perbaikan untuk satu masalah.
+	// perlindungan kedua: satu perbaikan untuk satu masalah.
 	for _, slot := range existingMap {
 		var bookings []struct {
 			id        string
@@ -489,7 +489,7 @@ func (s *Service) syncSlots(ctx context.Context, tx pgx.Tx, lecturerID string, f
 		}
 
 		// Kasus 1: tidak ada riwayat booking sama sekali. Slot murni generator,
-		// tidak ada yang menahan — hapus saja.
+		// tidak ada yang menahan: hapus saja.
 		if len(bookings) == 0 {
 			if _, err := tx.Exec(ctx,
 				`DELETE FROM slots WHERE id = $1::uuid`, slot.id); err != nil {
@@ -511,7 +511,7 @@ func (s *Service) syncSlots(ctx context.Context, tx pgx.Tx, lecturerID string, f
 
 		for _, b := range bookings {
 			if b.status != "confirmed" {
-				// booking sudah selesai/cancelled/batal — tidak perlu dinotifikasi
+				// booking sudah selesai/cancelled/batal: tidak perlu dinotifikasi
 				continue
 			}
 			// Batalkan booking: status, cancelled_at, cancelled_by, cancel_reason.
@@ -547,7 +547,7 @@ func (s *Service) syncSlots(ctx context.Context, tx pgx.Tx, lecturerID string, f
 			// reminder (M4) yang akan mengeksekusi. partial unique index
 			// notifications_dedupe_key(booking_id, type) WHERE booking_id
 			// IS NOT NULL mencegah dobel notifikasi kalau reconcile
-			// dijalankan dua kali — predicate pada ON CONFLICT harus
+			// dijalankan dua kali: predicate pada ON CONFLICT harus
 			// mengikuti predicate index persis.
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO notifications (user_id, booking_id, type, payload, scheduled_at)

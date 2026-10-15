@@ -3,12 +3,12 @@
 -- =============================================================================
 --
 -- LATAR BELAKANG:
--- Seorang dosen mengubah aturan ketersediaan → slot yang sudah ada harus
+-- Seorang dosen mengubah aturan ketersediaan -> slot yang sudah ada harus
 -- disesuaikan. Beberapa kasus yang harus ditangani:
 --
---   1. Slot baru perlu dibuat     → INSERT
---   2. Slot lama tidak relevan   → DELETE (kalau belum pernah dibooking)
---                                 → SET withdrawn_at (kalau sudah ada riwayat)
+--   1. Slot baru perlu dibuat     -> INSERT
+--   2. Slot lama tidak relevan   -> DELETE (kalau belum pernah dibooking)
+--                                 -> SET withdrawn_at (kalau sudah ada riwayat)
 --   3. Slot withdrawn harus dikembalikan kalau aturan kembali aktif
 --
 -- Kenapa tidak pakai DELETE + INSERT biasa?

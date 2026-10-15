@@ -67,7 +67,7 @@ func (s *Service) Run(ctx context.Context) error {
 //
 // BACAAN untuk integration test: query ini memilih SEMUA notification pending
 // yang due (LIMIT 20), bukan satu per test. Test yang ingin deterministik
-// harus pakai processNotification(ctx, id) — lihat catatan di integration test.
+// harus pakai processNotification(ctx, id): lihat catatan di integration test.
 func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -144,7 +144,7 @@ func (s *Service) processBatch(ctx context.Context) (processed int, err error) {
 //   - production (cadangan) untuk retry manual atau trigger spesifik.
 //
 // Return 1 kalau notification ditemukan dan diproses (status apapun:
-// sent / failed / skipped). Return 0 kalau tidak ada baris cocok — bisa
+// sent / failed / skipped). Return 0 kalau tidak ada baris cocok: bisa
 // karena id tidak ada, status bukan 'pending', belum due, atau baris
 // sedang dipegang lock worker lain (FOR UPDATE SKIP LOCKED).
 //
@@ -199,11 +199,11 @@ func (s *Service) processNotification(ctx context.Context, notificationID string
 // validasi status, kirim email, UPDATE status notification. Dipakai oleh
 // processBatch dan processNotification.
 //
-// Tidak mengelola commit/rollback — caller yang bertanggung jawab.
+// Tidak mengelola commit/rollback: caller yang bertanggung jawab.
 // Mengembalikan error hanya untuk kesalahan tak terduga (kegagalan UPDATE
 // atau kesalahan tak terduga lainnya). Kasus bisnis biasa (booking tidak
-// ditemukan → status jadi 'failed'; status booking bukan 'confirmed' →
-// status jadi 'skipped'; email gagal → attempts++ atau 'failed') ditangani
+// ditemukan -> status jadi 'failed'; status booking bukan 'confirmed' ->
+// status jadi 'skipped'; email gagal -> attempts++ atau 'failed') ditangani
 // secara internal dan tidak mengembalikan error.
 func (s *Service) processNotificationInTx(ctx context.Context, tx pgx.Tx, r notifRow) error {
 	// Ambil data booking terkini dengan JOIN.
@@ -224,7 +224,7 @@ func (s *Service) processNotificationInTx(ctx context.Context, tx pgx.Tx, r noti
 		WHERE b.id = $1::uuid`, r.bookingID,
 	).Scan(&studentEmail, &studentName, &lecturerName, &topic, &slotStart, &bookingStatus)
 	if err != nil {
-		// Booking tidak ditemukan atau error — abaikan, tetap lanjut.
+		// Booking tidak ditemukan atau error: abaikan, tetap lanjut.
 		s.log.Warn("booking not found for notification",
 			"notification_id", r.id, "booking_id", r.bookingID, "err", err)
 		// Tandai sebagai failed karena booking tidak valid.

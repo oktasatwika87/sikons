@@ -320,7 +320,7 @@ func TestCreateBooking_IdempotencyKeyBodyBeda(t *testing.T) {
 //
 // Catatan penting kenapa ini beda dari test paralel tanpa key: idempotency key
 // punya scope (user_id, key). Kalau setiap goroutine memakai key berbeda,
-// mereka adalah request BUKAN kembar menurut mekanisme idempotency —
+// mereka adalah request BUKAN kembar menurut mekanisme idempotency;
 // mereka akan saling berebut slot. Test ini baru bermakna kalau semua retry
 // memakai key yang PERSIS SAMA.
 //
@@ -418,7 +418,7 @@ func TestCreateBooking_ConcurrencyDenganIdempotencyKey(t *testing.T) {
 //  4. ulang request dengan key K -> HARUS dapat id A, bukan id B
 //
 // Kalau jalur replay memilih query ulang `WHERE slot_id=X AND student_id=Y`,
-// langkah 4 akan mengembalikan id B — bug yang persis yang harus dicegah.
+// langkah 4 akan mengembalikan id B: bug yang persis yang harus dicegah.
 func TestCreateBooking_ReplayMengembalikanBookingPertamaBukanYangTerbaru(t *testing.T) {
 	h := buatServerUji(t)
 	dosen, _ := h.buatDosen()
@@ -562,7 +562,7 @@ func TestCreateBooking_SlotTerlaluDekat(t *testing.T) {
 	h := buatServerUji(t)
 	dosen, _ := h.buatDosen()
 	_, tokenMhs := h.buatMahasiswa()
-	// Slot mulai 30 menit dari sekarang — kurang dari minLeadMinutes (60).
+	// Slot mulai 30 menit dari sekarang: kurang dari minLeadMinutes (60).
 	slot := h.buatSlot(dosen, 30*time.Minute)
 
 	reqBody := map[string]string{"slot_id": slot, "topic": "Bimbingan skripsi", "description": ""}
@@ -882,7 +882,7 @@ func TestCancelBooking_HappyPath(t *testing.T) {
 	h := buatServerUji(t)
 	dosen, _ := h.buatDosen()
 	mhsID, tokenMhs := h.buatMahasiswa()
-	// Slot 5 jam dari sekarang — jauh dari H-3.
+	// Slot 5 jam dari sekarang: jauh dari H-3.
 	slot := h.buatSlot(dosen, 5*time.Hour)
 
 	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
@@ -931,7 +931,7 @@ func TestCancelBooking_OrangLain(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.router.ServeHTTP(w, req)
 
-	// Harus 404, bukan 403 — tidak membocorkan keberadaan booking orang lain.
+	// Harus 404, bukan 403: tidak membocorkan keberadaan booking orang lain.
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, mau 404", w.Code)
 	}
@@ -941,7 +941,7 @@ func TestCancelBooking_TerlaluDekat(t *testing.T) {
 	h := buatServerUji(t)
 	dosen, _ := h.buatDosen()
 	mhsID, tokenMhs := h.buatMahasiswa()
-	// Slot 2 jam dari sekarang — kurang dari H-3.
+	// Slot 2 jam dari sekarang: kurang dari H-3.
 	slot := h.buatSlot(dosen, 2*time.Hour)
 
 	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
@@ -984,7 +984,7 @@ func TestCancelBooking_DosenDitolak(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.router.ServeHTTP(w, req)
 
-	// Harus 403 — route cancel dilindungi requireRole(auth.RoleStudent).
+	// Harus 403: route cancel dilindungi requireRole(auth.RoleStudent).
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, mau 403", w.Code)
 	}
@@ -996,7 +996,7 @@ func TestCompleteBooking_HappyPath(t *testing.T) {
 	h := buatServerUji(t)
 	dosenID, tokenDosen := h.buatDosen()
 	mhsID, _ := h.buatMahasiswa()
-	// Slot di masa lalu — insert booking langsung.
+	// Slot di masa lalu: insert booking langsung.
 	slot := h.buatSlot(dosenID, -5*time.Hour)
 	bookingID := h.buatBooking(mhsID, slot)
 
@@ -1032,7 +1032,7 @@ func TestCompleteBooking_MahasiswaDitolak(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.router.ServeHTTP(w, req)
 
-	// Harus 403 — route complete dilindungi requireRole(auth.RoleLecturer).
+	// Harus 403: route complete dilindungi requireRole(auth.RoleLecturer).
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, mau 403", w.Code)
 	}
@@ -1051,7 +1051,7 @@ func TestCompleteBooking_DosenLain(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.router.ServeHTTP(w, req)
 
-	// Harus 404 — dosen2 bukan pemilik slot.
+	// Harus 404: dosen2 bukan pemilik slot.
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, mau 404", w.Code)
 	}
@@ -1061,7 +1061,7 @@ func TestCompleteBooking_SebelumStart(t *testing.T) {
 	h := buatServerUji(t)
 	dosenID, tokenDosen := h.buatDosen()
 	mhsID, _ := h.buatMahasiswa()
-	// Slot di masa depan — belum dimulai.
+	// Slot di masa depan: belum dimulai.
 	slot := h.buatSlot(dosenID, 5*time.Hour)
 
 	b, err := booking.NewService(poolUji, 60, 3, 1).Create(context.Background(), booking.CreateInput{
@@ -1131,7 +1131,7 @@ func TestNoShowBooking_MahasiswaDitolak(t *testing.T) {
 // TestLecturerNoteMunculDiGetBooking menguji alur lengkap:
 //  1. booking diselesaikan dosen dengan lecturer_note
 //  2. GET /bookings sebagai mahasiswa TIDAK boleh mengembalikan field
-//     lecturer_note — catatan dosen privat untuk dosen saja
+//     lecturer_note: catatan dosen privat untuk dosen saja
 //  3. GET /bookings sebagai dosen boleh mengembalikan lecturer_note
 func TestLecturerNoteMunculDiGetBooking(t *testing.T) {
 	h := buatServerUji(t)
@@ -1155,7 +1155,7 @@ func TestLecturerNoteMunculDiGetBooking(t *testing.T) {
 	}
 
 	// GET sebagai mahasiswa: field lecturer_note HARUS tidak ada di response.
-	// Catatan dosen hanya untuk dosen — frontend tidak boleh melihatnya
+	// Catatan dosen hanya untuk dosen: frontend tidak boleh melihatnya
 	// (kalau field bocor, defense-in-depth di frontend pun percuma).
 	reqMhs := httptest.NewRequest("GET", "/api/v1/bookings", nil)
 	reqMhs.Header.Set("Authorization", "Bearer "+tokenMhs)

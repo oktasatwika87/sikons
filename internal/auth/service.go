@@ -40,7 +40,7 @@ type RegisterInput struct {
 //
 // Kalau role bisa dikirim dari body request, siapa pun bisa mendaftar sebagai
 // 'lecturer' lalu membuka jadwal konsultasi atas nama dosen, atau sebagai
-// 'admin'. Tidak ada validasi di frontend yang bisa mencegah itu — penyerang
+// 'admin'. Tidak ada validasi di frontend yang bisa mencegah itu: penyerang
 // tidak memakai frontend-mu. Akun dosen dan admin dibuat lewat jalur terpisah
 // yang sudah terautentikasi.
 func (s *Service) Register(ctx context.Context, in RegisterInput) (*User, error) {
@@ -124,7 +124,7 @@ func (s *Service) Login(ctx context.Context, emailInput, password, userAgent str
 	}
 
 	// Pemeriksaan is_active dilakukan SETELAH password diverifikasi. Kalau
-	// dibalik, orang yang menebak email bisa tahu akun itu ada tapi nonaktif —
+	// dibalik, orang yang menebak email bisa tahu akun itu ada tapi nonaktif;
 	// bocor lagi informasinya.
 	if !u.IsActive {
 		return nil, ErrAccountInactive
@@ -210,21 +210,21 @@ func (s *Service) IssueRefreshToken(ctx context.Context, userID, userAgent strin
 // RotateRefreshToken memutar token dalam satu transaksi.
 //
 // Aturan saat ini:
-//  1. X aktif → rotasi X ke Y. Simpan X.replaced_by = Y.
-//  2. X sudah dicabut KARENA ROTASI (X.replaced_by != NULL) — masih
+//  1. X aktif -> rotasi X ke Y. Simpan X.replaced_by = Y.
+//  2. X sudah dicabut KARENA ROTASI (X.replaced_by != NULL): masih
 //     dalam grace period:
 //     a. Penerus (Y) masih aktif DAN umurnya >= RefreshSuccessorMinAge
 //     (default 2 detik): cabut Y, terbitkan token baru Z dari X,
 //     catat Z sebagai pengganti X. Balas 200. Ini memperbaiki skenario
-//     "balasan refresh hilang" — server commit tapi cookie baru tidak
+//     "balasan refresh hilang": server commit tapi cookie baru tidak
 //     sampai ke browser, dan browser mengirim ulang token lama di
 //     page load berikutnya.
 //     b. Selain itu (penerus sudah dicabut, atau penerus masih terlalu
 //     muda): 409 REFRESH_IN_PROGRESS. Pemenangnya akan menyelesaikan
 //     rotasi dengan benar.
-//  3. X sudah dicabut KARENA ROTASI dan lewat grace → reuse. Cabut
+//  3. X sudah dicabut KARENA ROTASI dan lewat grace -> reuse. Cabut
 //     seluruh keluarga.
-//  4. X sudah dicabut TANPA PENERUS (X.replaced_by == NULL) —
+//  4. X sudah dicabut TANPA PENERUS (X.replaced_by == NULL);
 //     perlakukan sama seperti lewat grace, apapun selisih waktunya.
 //     Ini mencakup:
 //     - Token yang dicabut oleh RevokeRefreshToken (logout) yang
@@ -236,13 +236,13 @@ func (s *Service) IssueRefreshToken(ctx context.Context, userID, userAgent strin
 //     dibuat. Saat dikirim ulang harus dianggap pencurian, bukan
 //     balapan wajar.
 //
-// Commit WAJIB saat pencurian terdeteksi — pencabutannya harus tersimpan,
+// Commit WAJIB saat pencurian terdeteksi: pencabutannya harus tersimpan,
 // bukan di-rollback. ErrRefreshTokenReused juga di-log di level Warn
 // dengan user_id dan family_id untuk keperluan audit keamanan.
 //
 // CATATAN TTL: 30 hari sliding. Alternatifnya absolute cap (30 hari dari login
 // pertama, tidak peduli berapa kali di-refresh). Sliding dipilih karena lebih
-// user-friendly — selama aktif, sesi tidak pernah kedaluwarsa tanpa sebab.
+// user-friendly: selama aktif, sesi tidak pernah kedaluwarsa tanpa sebab.
 //
 // INVARIAN: pada setiap saat, maksimal SATU token aktif per keluarga.
 // Dilindungi oleh FOR UPDATE pada baris X + INSERT/UPDATE dalam transaksi
@@ -265,7 +265,7 @@ func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent s
 	}
 	defer tx.Rollback(ctx)
 
-	// Sekalian ambil replaced_by di SELECT yang sama — dipakai untuk deteksi
+	// Sekalian ambil replaced_by di SELECT yang sama: dipakai untuk deteksi
 	// balapan wajar vs pencurian.
 	var rowID, familyID, userID string
 	var revokedAt *time.Time
@@ -310,7 +310,7 @@ func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent s
 
 		// b. X tidak punya penerus. Keluarga masih punya token aktif
 		// (Z atau penerus lain), tapi X jelas bukan bagian dari
-		// rotasi normal — penerus Y-nya pernah dirotasi tanpa
+		// rotasi normal: penerus Y-nya pernah dirotasi tanpa
 		// diganti, atau Y dicabut oleh cabang 2a. Apapun
 		// skenarionya, ini pencurian.
 		if replacedBy == nil {
@@ -319,7 +319,7 @@ func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent s
 
 		selisihGrace := time.Since(*revokedAt)
 
-		// d. Lewat grace → pencurian. Cabut seluruh keluarga.
+		// d. Lewat grace -> pencurian. Cabut seluruh keluarga.
 		if selisihGrace > gracePeriod {
 			return s.familyRevokeAndCommit(ctx, tx, familyID, userID)
 		}
@@ -336,7 +336,7 @@ func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent s
 				return "", "", fmt.Errorf("membaca penerus token: %w", err)
 			}
 
-			// Kasus 2a: penerus masih aktif DAN umurnya cukup → balasan
+			// Kasus 2a: penerus masih aktif DAN umurnya cukup -> balasan
 			// refresh sebelumnya kemungkinan hilang. Cabut penerus, terbitkan
 			// token baru yang menjadi pengganti X.
 			if penerusRevokedAt == nil && time.Since(penerusCreatedAt) >= successorMinAge {
@@ -355,10 +355,10 @@ func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent s
 					return "", "", fmt.Errorf("mencabut penerus saat recoveri: %w", err)
 				}
 				// X.replaced_by menunjuk ke token baru. Penerus lama (Y)
-				// TIDAK kita isi replaced_by — biarkan NULL, sama seperti
+				// TIDAK kita isi replaced_by: biarkan NULL, sama seperti
 				// Y dibuat tanpa successor oleh rotasi normal. Dengan begitu
 				// Y yang dikirim ulang setelah grace jatuh ke "no successor
-				// past grace" → reuse.
+				// past grace" -> reuse.
 				_, err = tx.Exec(ctx, `
 					UPDATE refresh_tokens
 					SET replaced_by = $1
@@ -376,7 +376,7 @@ func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent s
 		}
 
 		// Kasus 2b: tidak ada penerus, atau penerus sudah dicabut, atau
-		// penerus masih terlalu muda. Balapan wajar — JANGAN cabut family,
+		// penerus masih terlalu muda. Balapan wajar: JANGAN cabut family,
 		// JANGAN commit. Kembalikan ErrRefreshInProgress agar caller retry.
 		return "", "", ErrRefreshInProgress
 	}
@@ -411,7 +411,7 @@ func (s *Service) RotateRefreshToken(ctx context.Context, plaintext, userAgent s
 
 // issueNewInTx membuat token refresh baru di dalam transaksi yang sudah
 // berjalan. Dipakai oleh alur rotasi normal dan oleh alur recoveri (kasus 2a).
-// Tidak commit — caller yang memutuskan kapan COMMIT.
+// Tidak commit: caller yang memutuskan kapan COMMIT.
 func (s *Service) issueNewInTx(ctx context.Context, tx pgx.Tx, userID, familyID, userAgent string) (string, string, error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
@@ -436,7 +436,7 @@ func (s *Service) issueNewInTx(ctx context.Context, tx pgx.Tx, userID, familyID,
 
 // familyRevokeAndCommit mencabut seluruh keluarga dan melakukan COMMIT.
 // Dipakai oleh cabang 3 (lewat grace) dan cabang 4 (tanpa penerus).
-// Commit eksplisit di sini — pencabutannya harus permanen, bukan
+// Commit eksplisit di sini: pencabutannya harus permanen, bukan
 // di-rollback. Setelah selesai, log peringatan reuse dicatat untuk
 // audit keamanan.
 func (s *Service) familyRevokeAndCommit(ctx context.Context, tx pgx.Tx, familyID, userID string) (string, string, error) {
@@ -459,18 +459,18 @@ func (s *Service) familyRevokeAndCommit(ctx context.Context, tx pgx.Tx, familyID
 }
 
 // RevokeRefreshToken mencabut seluruh keluarga dari token yang diberikan.
-// Dipakai saat logout. Satu statement dengan subquery — tidak perlu
+// Dipakai saat logout. Satu statement dengan subquery: tidak perlu
 // SELECT terpisah.
 //
 // Hanya `revoked_at` yang diubah, jadi data waktu pencabutan di DB
-// adalah waktu yang sebenarnya. `replaced_by` TIDAK disentuh — logika
+// adalah waktu yang sebenarnya. `replaced_by` TIDAK disentuh: logika
 // "keluarga sudah tidak punya token aktif" di RotateRefreshToken
 // (cabang a) mendeteksi efek logout dari sini, bukan dari
 // memanipulasi `replaced_by` untuk mengarahkan logika.
 func (s *Service) RevokeRefreshToken(ctx context.Context, plaintext string) error {
 	decoded, err := base64.RawURLEncoding.DecodeString(plaintext)
 	if err != nil {
-		return nil // Token tidak valid — logout tetap idempoten
+		return nil // Token tidak valid: logout tetap idempoten
 	}
 	hash := sha256.Sum256(decoded)
 

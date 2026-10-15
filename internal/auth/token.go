@@ -76,7 +76,7 @@ func (i *TokenIssuer) Parse(tokenString string) (Identity, error) {
 		// INI BARIS PALING PENTING DI FILE INI.
 		//
 		// Tanpa WithValidMethods, penyerang bisa mengirim token dengan header
-		// alg "none" — token tanpa tanda tangan sama sekali — dan sebagian
+		// alg "none": token tanpa tanda tangan sama sekali: dan sebagian
 		// implementasi akan menerimanya. Varian lain: token yang dibuat dengan
 		// HS256 memakai PUBLIC KEY RSA kita sebagai secret, kalau kita
 		// menerima RS256 dan HS256 sekaligus.
@@ -103,7 +103,7 @@ func (i *TokenIssuer) Parse(tokenString string) (Identity, error) {
 
 // SetJamUntukTest mengganti sumber waktu penerbit token.
 //
-// Hanya untuk test — namanya sengaja dibuat panjang dan canggung supaya tidak
+// Hanya untuk test: namanya sengaja dibuat panjang dan canggung supaya tidak
 // ada yang memakainya di kode produksi tanpa sadar. Alternatifnya adalah
 // mengekspor field jam, tapi field yang diekspor mengundang siapa saja
 // mengubahnya kapan saja.

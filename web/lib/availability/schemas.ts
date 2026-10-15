@@ -2,7 +2,7 @@
  * Zod schema untuk validasi form ketersediaan.
  *
  * Validasi HARUS sinkron dengan validator Go di
- * internal/server/availability_handlers.go — bukan dikarang sendiri.
+ * internal/server/availability_handlers.go: bukan dikarang sendiri.
  *
  * Ringkasan aturan Go:
  * - day_of_week: 0-6

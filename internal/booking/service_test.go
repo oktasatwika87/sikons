@@ -26,7 +26,7 @@ import (
 // meluluskan test ini sekaligus tidak membuktikan apa pun.
 //
 // Jalankan dengan:  make test-integration
-// Kalau TEST_DATABASE_URL kosong, seluruh file ini dilewati — supaya
+// Kalau TEST_DATABASE_URL kosong, seluruh file ini dilewati: supaya
 // `go test ./...` biasa tetap cepat dan tidak menuntut Docker hidup.
 
 var poolUji *pgxpool.Pool
@@ -34,7 +34,7 @@ var poolUji *pgxpool.Pool
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		fmt.Println("TEST_DATABASE_URL kosong — test integrasi booking dilewati")
+		fmt.Println("TEST_DATABASE_URL kosong: test integrasi booking dilewati")
 		os.Exit(0)
 	}
 
@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	// Sengaja dinaikkan dari default. Dengan pool kekecilan, 100 goroutine akan
-	// mengantre di pool DULU sebelum sempat berebut baris slot — testnya lulus,
+	// mengantre di pool DULU sebelum sempat berebut baris slot: testnya lulus,
 	// tapi yang terbukti cuma antrean pool, bukan penguncian baris. Angka ini
 	// harus cukup besar supaya perebutan benar-benar terjadi di Postgres.
 	cfg.MaxConns = 30
@@ -232,7 +232,7 @@ func TestCreate_SlotTidakAda(t *testing.T) {
 func TestCreate_MembuatReminderNotification(t *testing.T) {
 	dosen := buatDosen(t)
 	mhs := buatMahasiswa(t, 1)
-	// Slot 2 jam dari sekarang — jauh dari minLeadMinutes (60 menit)
+	// Slot 2 jam dari sekarang: jauh dari minLeadMinutes (60 menit)
 	// supaya test fokus ke notification, bukan valdasi lead time.
 	slot := buatSlot(t, dosen, 2*time.Hour)
 
@@ -364,7 +364,7 @@ func TestCreate_SlotDitarik(t *testing.T) {
 		t.Fatalf("menarik slot: %v", err)
 	}
 
-	// Pesan — harus gagal dengan ErrSlotWithdrawn
+	// Pesan: harus gagal dengan ErrSlotWithdrawn
 	_, err = svc.Create(context.Background(),
 		CreateInput{SlotID: slot, StudentID: mhs[0], Topic: "coba"})
 	if !errors.Is(err, ErrSlotWithdrawn) {
@@ -397,7 +397,7 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 
 	mulai := make(chan struct{})
 	// Tiap goroutine menulis ke indeksnya SENDIRI, jadi tidak ada dua goroutine
-	// yang menyentuh alamat memori yang sama — aman tanpa mutex. `go test -race`
+	// yang menyentuh alamat memori yang sama: aman tanpa mutex. `go test -race`
 	// yang akan membuktikan klaim ini, bukan keyakinan saya.
 	hasil := make([]error, jumlah)
 	ids := make([]string, jumlah)
@@ -445,7 +445,7 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 		t.Errorf("konflik = %d, mau %d", konflik, jumlah-1)
 	}
 	// Error jenis lain berarti ada yang salah dan sedang tersamar sebagai
-	// "seolah-olah berhasil ditolak" — misalnya timeout pool atau deadlock.
+	// "seolah-olah berhasil ditolak": misalnya timeout pool atau deadlock.
 	if len(lain) > 0 {
 		t.Errorf("ada %d error di luar dugaan, contoh pertama: %v", len(lain), lain[0])
 	}
@@ -470,7 +470,7 @@ func TestCreate_SeratusRequestParalelHanyaSatuYangMenang(t *testing.T) {
 // Membuktikan langkah 1 (kunci baris mahasiswa) benar-benar bekerja.
 //
 // Satu mahasiswa menembak 10 slot BERBEDA sekaligus. Karena slotnya berbeda,
-// kunci slot tidak menolong sama sekali — tidak ada dua transaksi yang berebut
+// kunci slot tidak menolong sama sekali: tidak ada dua transaksi yang berebut
 // baris yang sama. Yang menahan batas 3 hanyalah kunci pada baris mahasiswa.
 //
 // Kalau `FOR NO KEY UPDATE` di langkah 1 dihapus, test ini akan menyimpan
@@ -539,7 +539,7 @@ func TestCreate_SatuMahasiswaMenembakSepuluhSlotSekaligus(t *testing.T) {
 		t.Fatalf("menghitung booking: %v", err)
 	}
 	if tersimpan != DefaultMaxActiveBookings {
-		t.Errorf("booking tersimpan = %d, mau %d — batas jebol", tersimpan, DefaultMaxActiveBookings)
+		t.Errorf("booking tersimpan = %d, mau %d: batas jebol", tersimpan, DefaultMaxActiveBookings)
 	}
 }
 
@@ -600,7 +600,7 @@ func TestCreate_IdempotencyKeyKlaimBerhasil(t *testing.T) {
 	}
 }
 
-// bytesContains adalah pembantu kecil — tanpa strings.Contains supaya test ini
+// bytesContains adalah pembantu kecil: tanpa strings.Contains supaya test ini
 // tidak bergantung pada modul yang lebih berat.
 func bytesContains(haystack, needle []byte) bool {
 	if len(needle) == 0 {
@@ -628,7 +628,7 @@ func TestCancel_Success(t *testing.T) {
 	mhs := buatMahasiswa(t, 1)
 	svc := NewService(poolUji, 60, 3, 1)
 
-	// Slot mulai 5 jam dari sekarang — lebih dari H-3.
+	// Slot mulai 5 jam dari sekarang: lebih dari H-3.
 	slot := buatSlot(t, dosen, 5*time.Hour)
 	b, err := svc.Create(context.Background(), CreateInput{
 		SlotID: slot, StudentID: mhs[0], Topic: "Test cancel",
@@ -654,7 +654,7 @@ func TestCancel_TerlaluDekatH3Jam(t *testing.T) {
 	mhs := buatMahasiswa(t, 1)
 	svc := NewService(poolUji, 60, 3, 1)
 
-	// Slot mulai 2 jam dari sekarang — kurang dari H-3.
+	// Slot mulai 2 jam dari sekarang: kurang dari H-3.
 	slot := buatSlot(t, dosen, 2*time.Hour)
 	b, err := svc.Create(context.Background(), CreateInput{
 		SlotID: slot, StudentID: mhs[0], Topic: "Terlalu dekat",
@@ -724,7 +724,7 @@ func TestCancel_Completed(t *testing.T) {
 		t.Fatalf("complete gagal: %v", err)
 	}
 
-	// Mahasiswa coba cancel — harus gagal.
+	// Mahasiswa coba cancel: harus gagal.
 	_, err = svc.Cancel(context.Background(), bookingID, mhs[0], "")
 	if !errors.Is(err, ErrBookingAlreadyFinalized) {
 		t.Fatalf("err = %v, mau ErrBookingAlreadyFinalized", err)
@@ -783,7 +783,7 @@ func TestComplete_Success(t *testing.T) {
 	if view.Status != "completed" {
 		t.Errorf("status = %q, mau completed", view.Status)
 	}
-	// Slot tetap 'booked' karena booking completed — tidak ada logika pengembalian.
+	// Slot tetap 'booked' karena booking completed: tidak ada logika pengembalian.
 	if s := statusSlot(t, slot); s != "booked" {
 		t.Errorf("status slot = %q, mau booked", s)
 	}
@@ -860,7 +860,7 @@ func TestNoShow_Success(t *testing.T) {
 // Setiap iterasi membuat slot dan booking BARU. Ini penting karena Reconcile
 // hanya mengunci baris bookings kalau ada booking berstatus confirmed di slot
 // yang ditarik. Kalau booking sudah dicancel di iterasi sebelumnya, Reconcile
-// tidak lagi menyentuh baris booking — race dua-lock yang mau dibuktikan tidak
+// tidak lagi menyentuh baris booking: race dua-lock yang mau dibuktikan tidak
 // terjadi di iterasi selanjutnya. Dengan booking baru setiap iterasi, setiap
 // pengulangan menguji kondisi race yang sama.
 func TestCancel_BarengReconcileTidakDeadlock(t *testing.T) {
@@ -904,7 +904,7 @@ func TestCancel_BarengReconcileTidakDeadlock(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-mulai
-			// Buat aturan baru yang TIDAK cover slot ini — agar Reconcile menariknya.
+			// Buat aturan baru yang TIDAK cover slot ini: agar Reconcile menariknya.
 			_, err = poolUji.Exec(ctx, `
 				INSERT INTO availability_rules (lecturer_id, day_of_week, start_time, end_time,
 				                               slot_duration_min, effective_from)
@@ -957,7 +957,7 @@ func TestCancel_BukanPemilik(t *testing.T) {
 		t.Fatalf("booking gagal: %v", err)
 	}
 
-	// MHS-1 coba cancel booking MHS-0 — harus 404.
+	// MHS-1 coba cancel booking MHS-0: harus 404.
 	_, err = svc.Cancel(context.Background(), b.Booking.ID, mhs[1], "")
 	if !errors.Is(err, ErrBookingNotFound) {
 		t.Fatalf("err = %v, mau ErrBookingNotFound", err)
@@ -976,7 +976,7 @@ func TestNoShow_DosenLain(t *testing.T) {
 	poolUji.Exec(context.Background(),
 		`UPDATE slots SET status = 'booked' WHERE id = $1::uuid`, slot)
 
-	// Dosen-2 (bukan pemilik slot) coba no-show — harus 404.
+	// Dosen-2 (bukan pemilik slot) coba no-show: harus 404.
 	_, err := svc.NoShow(context.Background(), bookingID, dosen2)
 	if !errors.Is(err, ErrBookingNotFound) {
 		t.Fatalf("err = %v, mau ErrBookingNotFound", err)

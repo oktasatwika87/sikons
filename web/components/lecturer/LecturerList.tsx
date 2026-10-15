@@ -19,16 +19,16 @@ import { Button } from "@/components/ui/button";
 import { DEPARTMENTS } from "@/components/lecturer/departments";
 
 /**
- * Halaman daftar dosen — list + filter + pagination.
+ * Halaman daftar dosen: list + filter + pagination.
  *
  * Sumber kebenaran state filter adalah URL query string
  * (department, q, page). Back button / share link akan kembalikan
- * tampilan yang sama persis — keputusan M5c #3.
+ * tampilan yang sama persis: keputusan M5c #3.
  *
  * q disimpan di URL setelah di-debounce (~350ms) supaya tidak spam
  * request ke backend ILIKE `%q%`.
  *
- * Query key convention: ['lecturers', { department, q, page }] — ikut
+ * Query key convention: ['lecturers', { department, q, page }]: ikut
  * pola RINGKASAN-M5C keputusan #2 untuk konsistensi M5d nanti.
  */
 export function LecturerList() {
@@ -43,7 +43,7 @@ export function LecturerList() {
 
   // Input q lokal untuk UX mengetik yang responsif; sync ke URL via debounce.
   // Pakai pola "store & compare" yang disarankan React untuk menyinkronkan
-  // state lokal dari perubahan eksternal (URL) — tanpa setState di dalam
+  // state lokal dari perubahan eksternal (URL): tanpa setState di dalam
   // useEffect, yang merupakan anti-pattern di React 19.
   const [qInput, setQInput] = useState(q);
   const [lastSyncedQ, setLastSyncedQ] = useState(q);
@@ -54,7 +54,7 @@ export function LecturerList() {
 
   const qDebounced = useDebouncedValue(qInput, 350);
 
-  // Debounced q → URL (reset halaman ke 1).
+  // Debounced q -> URL (reset halaman ke 1).
   useEffect(() => {
     if (qDebounced === q) return;
     const params = new URLSearchParams(searchParams.toString());
@@ -62,7 +62,7 @@ export function LecturerList() {
     else params.delete("q");
     params.delete("page");
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    // deps sengaja hanya qDebounced — perubahan searchParams/router
+    // deps sengaja hanya qDebounced: perubahan searchParams/router
     // bukan pemicu, melainkan efek dari sini.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qDebounced]);
@@ -86,7 +86,7 @@ export function LecturerList() {
     updateUrl({ page: newPage === 1 ? null : String(newPage) });
   };
 
-  // Query — catatan: useApiFetch() aman dipakai untuk endpoint publik karena
+  // Query: catatan: useApiFetch() aman dipakai untuk endpoint publik karena
   // AuthContext anonymous tidak kirim Authorization header.
   const fetchWithRetry = useApiFetch();
   const query = useQuery<LecturerListResponse>({

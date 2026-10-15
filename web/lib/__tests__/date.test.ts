@@ -1,5 +1,5 @@
 /**
- * Test lib/date.ts — fokus pada konversi zona Asia/Jakarta.
+ * Test lib/date.ts: fokus pada konversi zona Asia/Jakarta.
  *
  * Paling penting: lintas batas hari UTC. Slot 17:00 UTC harus tampil
  * 00:00 WIB keesokan harinya. Kelas bug ini yang terjadi di backend M3b
@@ -23,7 +23,7 @@ import {
   isSameJakartaDay,
 } from "@/lib/date";
 
-describe("lib/date — konversi zona Asia/Jakarta", () => {
+describe("lib/date: konversi zona Asia/Jakarta", () => {
   it("17:00 UTC = 00:00 WIB keesokan harinya (batas hari)", () => {
     // 2026-09-10T17:00:00Z = 2026-09-11T00:00:00+07:00
     const utc = "2026-09-10T17:00:00Z";
@@ -43,7 +43,7 @@ describe("lib/date — konversi zona Asia/Jakarta", () => {
 
   it("jakartaDayName konsisten ISO weekday (Senin..Minggu)", () => {
     // 2026-09-07 adalah Senin (kalender tetap, tidak tergantung zona).
-    // Untuk name kita verifikasi Lewat zona — pakai 04:00 WIB yang berarti
+    // Untuk name kita verifikasi Lewat zona: pakai 04:00 WIB yang berarti
     // 2026-09-06T21:00:00Z di UTC; ini tetap tanggal Senin di WIB.
     expect(jakartaDayName("2026-09-07T04:00:00+07:00")).toBe("Senin");
     expect(jakartaDayName("2026-09-08T04:00:00+07:00")).toBe("Selasa");
@@ -52,7 +52,7 @@ describe("lib/date — konversi zona Asia/Jakarta", () => {
   });
 
   it("startOfWeekJakarta kembali ke Senin minggu yang sama", () => {
-    // Kamis 10 Sep 2026 → Senin 7 Sep 2026.
+    // Kamis 10 Sep 2026 -> Senin 7 Sep 2026.
     const kamis = new Date("2026-09-10T08:00:00+07:00");
     const senin = startOfWeekJakarta(kamis);
     // getDay() ikut zona proses, bukan WIB (Senin 00:00 WIB = Minggu 17:00
@@ -62,7 +62,7 @@ describe("lib/date — konversi zona Asia/Jakarta", () => {
   });
 
   it("startOfWeekJakarta untuk hari Minggu kembali ke Senin minggu ITU", () => {
-    // Minggu 13 Sep 2026 → Senin 7 Sep 2026 (minggu yang sama, ISO).
+    // Minggu 13 Sep 2026 -> Senin 7 Sep 2026 (minggu yang sama, ISO).
     const minggu = new Date("2026-09-13T08:00:00+07:00");
     const senin = startOfWeekJakarta(minggu);
     expect(jakartaDayName(senin)).toBe("Senin");
@@ -118,22 +118,22 @@ describe("lib/date — konversi zona Asia/Jakarta", () => {
   });
 
   it("isBeforeThisWeekJakarta: minggu lalu = true, minggu ini = false", () => {
-    // Pakai Senin minggu lalu sebagai acuan — harusnya sebelum minggu ini.
+    // Pakai Senin minggu lalu sebagai acuan: harusnya sebelum minggu ini.
     const mingguLalu = new Date();
     mingguLalu.setDate(mingguLalu.getDate() - 14);
     expect(isBeforeThisWeekJakarta(mingguLalu)).toBe(true);
 
     // Senin minggu ini (asumsi tes dijalankan sekitar tanggal saat ini)
-    // Ambil Senin minggu ini dari `new Date()` lewat startOfWeekJakarta —
+    // Ambil Senin minggu ini dari `new Date()` lewat startOfWeekJakarta;
     // seharusnya bukan sebelum minggu ini.
     const mingguIni = startOfWeekJakarta();
     expect(isBeforeThisWeekJakarta(mingguIni)).toBe(false);
   });
 
   it("formatWeekRangeLabel menulis rentang dalam Bahasa Indonesia", () => {
-    // 7–13 September 2026 (Senin..Minggu bulan sama).
+    // 7-13 September 2026 (Senin..Minggu bulan sama).
     expect(formatWeekRangeLabel("2026-09-10T08:00:00+07:00")).toBe(
-      "7–13 September 2026"
+      "7-13 September 2026"
     );
   });
 
@@ -147,31 +147,31 @@ describe("lib/date — konversi zona Asia/Jakarta", () => {
   it("formatJakartaShortDate menulis 'd MMM' sesuai zona Jakarta", () => {
     // 10 September 2026 WIB.
     expect(formatJakartaShortDate("2026-09-10T01:00:00Z")).toBe("10 Sep");
-    // Batas hari: 17:00 UTC tanggal 10 → 00:00 tanggal 11 WIB.
+    // Batas hari: 17:00 UTC tanggal 10 -> 00:00 tanggal 11 WIB.
     expect(formatJakartaShortDate("2026-09-10T17:00:00Z")).toBe("11 Sep");
   });
 });
 
 describe("isSameJakartaDay", () => {
-  it("17:00 UTC dan 18:00 UTC tanggal sama di WIB → true", () => {
+  it("17:00 UTC dan 18:00 UTC tanggal sama di WIB -> true", () => {
     // 2026-09-10T17:00:00Z = 2026-09-11T00:00+07:00
     // 2026-09-10T18:00:00Z = 2026-09-11T01:00+07:00
     // Keduanya di tanggal 11 September WIB
     expect(isSameJakartaDay("2026-09-10T17:00:00Z", "2026-09-10T18:00:00Z")).toBe(true);
   });
 
-  it("16:59 UTC dan 17:00 UTC beda hari di WIB → false", () => {
+  it("16:59 UTC dan 17:00 UTC beda hari di WIB -> false", () => {
     // 2026-09-10T16:59:00Z = 2026-09-10T23:59+07:00
     // 2026-09-10T17:00:00Z = 2026-09-11T00:00+07:00
     expect(isSameJakartaDay("2026-09-10T16:59:00Z", "2026-09-10T17:00:00Z")).toBe(false);
   });
 
-  it("tanggal sama dengan offset berbeda → true", () => {
+  it("tanggal sama dengan offset berbeda -> true", () => {
     expect(isSameJakartaDay("2026-09-11T00:00:00+07:00", "2026-09-10T17:00:00Z")).toBe(true);
     expect(isSameJakartaDay("2026-09-11T12:00:00+07:00", "2026-09-11T05:00:00Z")).toBe(true);
   });
 
-  it("Date object vs string → tetap bekerja", () => {
+  it("Date object vs string -> tetap bekerja", () => {
     const date = new Date("2026-09-11T00:00:00+07:00");
     expect(isSameJakartaDay(date, "2026-09-10T17:00:00Z")).toBe(true);
   });

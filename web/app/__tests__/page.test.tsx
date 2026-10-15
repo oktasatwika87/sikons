@@ -16,7 +16,7 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
-// ─── Mock router ───────────────────────────────────────────────────────────────
+// Mock router
 
 const mockReplace = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -26,7 +26,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/",
 }));
 
-// ─── Helper: render RoleRedirect dengan user tertentu ──────────────────────────
+// Helper: render RoleRedirect dengan user tertentu
 
 async function renderAsRole(role: "lecturer" | "student" | "admin") {
   const RouteRecorder = () => {
@@ -58,7 +58,7 @@ async function renderAsRole(role: "lecturer" | "student" | "admin") {
   });
 }
 
-// ─── Tests ────────────────────────────────────────────────────────────────────
+// Tests
 
 describe("RoleRedirect", () => {
   it("dosen (lecturer) di / redirect ke /dashboard", async () => {

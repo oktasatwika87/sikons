@@ -14,7 +14,7 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
-    // Pola `include` hanya mengambil *.test.ts(x) — spec file Playwright
+    // Pola `include` hanya mengambil *.test.ts(x): spec file Playwright
     // (`*.spec.ts`) otomatis tidak masuk. `exclude` e2e/ sebagai pengaman
     // tambahan kalau ada perubahan pola include di kemudian hari.
     include: ["**/*.test.{ts,tsx}"],

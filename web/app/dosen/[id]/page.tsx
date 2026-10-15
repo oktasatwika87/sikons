@@ -2,10 +2,10 @@ import { Suspense } from "react";
 import { LecturerDetail } from "@/components/lecturer/LecturerDetail";
 
 /**
- * /dosen/[id] — detail dosen + kalender slot mingguan (read-only).
+ * /dosen/[id]: detail dosen + kalender slot mingguan (read-only).
  *
  * [id] adalah UUID dosen. Validasi format dilakukan di sisi server dengan
- * Postgres (invalid UUID → 404 NotFound).
+ * Postgres (invalid UUID -> 404 NotFound).
  */
 export default async function DosenDetailPage({
   params,

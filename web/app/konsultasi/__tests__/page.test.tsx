@@ -1,5 +1,5 @@
 /**
- * Test untuk halaman /konsultasi — membuktikan percabangan per role.
+ * Test untuk halaman /konsultasi: membuktikan percabangan per role.
  *
  * Dengan data mock yang SAMA, verifikasi:
  * - Mahasiswa: melihat nama dosen + tombol Batalkan
@@ -49,7 +49,7 @@ afterAll(() => server.close());
 // useCancelBooking TIDAK di-mock: PATCH /bookings/:id/cancel dilayani MSW
 // supaya jalur error dari hook sampai ke dialog ikut teruji.
 
-// ─── Shared mock data — sama untuk kedua role ──────────────────────────────────
+// Shared mock data, sama untuk kedua role
 
 const MOCK_BOOKINGS = [
   {
@@ -100,7 +100,7 @@ const MOCK_BOOKINGS = [
   },
 ];
 
-// ─── Test setup helper ─────────────────────────────────────────────────────────
+// Test setup helper
 
 function renderAsRole(role: "student" | "lecturer") {
   const queryClient = new QueryClient({
@@ -128,7 +128,7 @@ function renderAsRole(role: "student" | "lecturer") {
         created_at: new Date().toISOString(),
       };
 
-  // Pakai handler default bookingHandlers — setBookings() mengisi data,
+  // Pakai handler default bookingHandlers: setBookings() mengisi data,
   // setCurrentRole() memberitahu handler GET /bookings peran pemanggil
   // supaya lecturer_note hanya dikirim saat role == "lecturer" (sama
   // seperti kontrak backend). Sesi login dipasang via sessionHandlers.
@@ -145,9 +145,9 @@ function renderAsRole(role: "student" | "lecturer") {
   );
 }
 
-// ─── Tests ─────────────────────────────────────────────────────────────────────
+// Tests
 
-describe("Halaman /konsultasi — percabangan per role", () => {
+describe("Halaman /konsultasi: percabangan per role", () => {
   it("mahasiswa melihat nama DOSEN di daftar", async () => {
     renderAsRole("student");
 
@@ -220,7 +220,7 @@ describe("Halaman /konsultasi — percabangan per role", () => {
   });
 });
 
-describe("Halaman /konsultasi — pembatalan", () => {
+describe("Halaman /konsultasi: pembatalan", () => {
   it("pembatalan yang ditolak backend menampilkan pesannya di dialog", async () => {
     renderAsRole("student");
     server.use(

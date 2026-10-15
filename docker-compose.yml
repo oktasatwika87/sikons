@@ -2,7 +2,7 @@
 # Aplikasi Go-nya sengaja dijalankan langsung di mesinmu dengan `make run`.
 #
 # Alasannya: menjalankan Go di dalam container saat development berarti setiap
-# perubahan satu baris kode harus melewati rebuild image — loop edit-jalan yang
+# perubahan satu baris kode harus melewati rebuild image; loop edit-jalan yang
 # tadinya 1 detik jadi 30 detik. Postgres tidak pernah kamu ubah,
 # jadi dia yang cocok dikurung di container.
 #
@@ -24,7 +24,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       # Tanpa healthcheck, `docker compose up` melaporkan "started" padahal
-      # Postgres masih beberapa detik lagi siap menerima koneksi — dan migrasi
+      # Postgres masih beberapa detik lagi siap menerima koneksi, dan migrasi
       # yang dijalankan tepat di celah itu akan gagal dengan pesan aneh.
       test: ["CMD-SHELL", "pg_isready -U sikons -d sikons"]
       interval: 3s

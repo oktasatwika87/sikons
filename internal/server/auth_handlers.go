@@ -74,7 +74,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	// Perhatikan: tidak ada field `role` di registerRequest. Sekalipun klien
 	// mengirim {"role":"admin"}, DecodeJSON akan menolaknya karena
-	// DisallowUnknownFields — dan seandainya lolos pun, Register memaku
+	// DisallowUnknownFields: dan seandainya lolos pun, Register memaku
 	// perannya jadi 'student'. Dua lapis, sengaja.
 	u, err := s.auth.Register(r.Context(), auth.RegisterInput{
 		Email:          req.Email,
@@ -93,7 +93,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 				err.Error(), nil)
 		default:
 			// Error tak terduga dicatat lengkap di log, tapi yang sampai ke
-			// pengguna cuma pesan generik — detail internal tidak boleh bocor.
+			// pengguna cuma pesan generik: detail internal tidak boleh bocor.
 			s.log.Error("register gagal", "err", err)
 			httpx.Internal(w)
 		}
@@ -174,12 +174,12 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusUnauthorized, "REFRESH_TOKEN_EXPIRED",
 				"Sesi habis, silakan login ulang", nil)
 		case errors.Is(err, auth.ErrRefreshInProgress):
-			// Balapan wajar — jangan set cookie, kembalikan 409.
+			// Balapan wajar: jangan set cookie, kembalikan 409.
 			// Frontend harus retry setelah sesaat.
 			httpx.Error(w, http.StatusConflict, "REFRESH_IN_PROGRESS",
 				"Sesi sedang diperbarui, coba lagi sesaat lagi", nil)
 		case errors.Is(err, auth.ErrRefreshTokenReused):
-			s.log.Warn("refresh token reuse terdeteksi — kemungkinan pencurian",
+			s.log.Warn("refresh token reuse terdeteksi: kemungkinan pencurian",
 				"user_agent", r.UserAgent())
 			httpx.Error(w, http.StatusUnauthorized, "REFRESH_TOKEN_REUSED",
 				"Sesi dicabut karena aktivitas mencurigakan, silakan login ulang", nil)
@@ -224,7 +224,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		if revokeErr := s.auth.RevokeRefreshToken(r.Context(), cookie.Value); revokeErr != nil {
 			s.log.Error("logout: mencabut refresh token", "err", revokeErr)
-			// Tetap lanjut — cookie akan dihapus meski token gagal dicabut.
+			// Tetap lanjut: cookie akan dihapus meski token gagal dicabut.
 		}
 	}
 
@@ -243,7 +243,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 	u, err := s.auth.ByID(r.Context(), id.UserID)
 	if err != nil {
-		// Token sah tapi usernya sudah tidak ada — akun dihapus setelah token
+		// Token sah tapi usernya sudah tidak ada: akun dihapus setelah token
 		// diterbitkan. Perlakukan seperti tidak terautentikasi.
 		httpx.Error(w, http.StatusUnauthorized, httpx.CodeUnauthorized,
 			"Akun tidak ditemukan", nil)

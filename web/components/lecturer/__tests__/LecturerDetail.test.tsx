@@ -88,7 +88,7 @@ function renderDetail(ui: ReactNode) {
   );
 }
 
-describe("LecturerDetail — navigasi minggu", () => {
+describe("LecturerDetail: navigasi minggu", () => {
   it("Sebelumnya mati di minggu berjalan dan hidup lagi setelah maju satu minggu", async () => {
     const slotRequests: URL[] = [];
     setupHandlers(slotRequests);
@@ -117,7 +117,7 @@ describe("LecturerDetail — navigasi minggu", () => {
   });
 });
 
-describe("LecturerDetail — SLOT_ALREADY_BOOKED", () => {
+describe("LecturerDetail: SLOT_ALREADY_BOOKED", () => {
   it("409 dari POST /bookings menutup dialog dan memunculkan banner", async () => {
     const slotRequests: URL[] = [];
     setupHandlers(slotRequests);
@@ -139,7 +139,7 @@ describe("LecturerDetail — SLOT_ALREADY_BOOKED", () => {
     renderDetail(<LecturerDetail lecturerId="lecturer-1" />);
 
     const slot = slotMingguIni();
-    const label = `${formatJakartaTime(slot.start_at)}–${formatJakartaTime(slot.end_at)}`;
+    const label = `${formatJakartaTime(slot.start_at)}-${formatJakartaTime(slot.end_at)}`;
     // Slot dirender dua kali (grid desktop + daftar mobile), ambil salah satu.
     const slotButtons = await screen.findAllByRole("button", { name: label });
     await user.click(slotButtons[0]);

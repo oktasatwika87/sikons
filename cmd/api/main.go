@@ -44,7 +44,7 @@ func run() error {
 	}
 
 	if cfg.JWTSecret == "" {
-		return errors.New("JWT_SECRET belum diisi — api tidak bisa menandatangani token tanpa secret")
+		return errors.New("JWT_SECRET belum diisi: api tidak bisa menandatangani token tanpa secret")
 	}
 
 	log := newLogger(cfg)
@@ -93,7 +93,7 @@ func run() error {
 	//
 	// Errornya dikirim lewat channel, bukan disimpan di variabel biasa.
 	// Variabel biasa yang ditulis satu goroutine dan dibaca goroutine lain
-	// adalah data race — channel yang membuat serah-terimanya aman.
+	// adalah data race; channel yang membuat serah-terimanya aman.
 	serverErr := make(chan error, 1)
 	go func() {
 		log.Info("server berjalan", "addr", srv.Addr, "env", cfg.Env)
@@ -113,7 +113,7 @@ func run() error {
 		log.Info("sinyal berhenti diterima, menutup server dengan rapi")
 
 		// Context BARU dengan batas waktunya sendiri. Tidak boleh menurunkan
-		// dari ctx, karena ctx sudah terlanjur dibatalkan — shutdown-nya akan
+		// dari ctx, karena ctx sudah terlanjur dibatalkan; shutdown-nya akan
 		// langsung menyerah tanpa menunggu request yang sedang berjalan.
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

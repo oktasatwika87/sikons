@@ -2,7 +2,7 @@
 //
 // Semua konfigurasi masuk lewat env, tidak ada file config yang di-commit.
 // Alasannya: proses yang sama harus bisa dijalankan di laptop, di CI, dan di
-// VPS tanpa dibangun ulang — yang berbeda cuma env-nya.
+// VPS tanpa dibangun ulang; yang berbeda cuma env-nya.
 package config
 
 import (
@@ -101,7 +101,7 @@ func Load() (Config, error) {
 	// Reminder: tidak masuk validasi wajib karena cmd/api tidak mengirim email.
 	cfg.ResendAPIKey = os.Getenv("RESEND_API_KEY")
 	cfg.EmailFrom = env("EMAIL_FROM", "SIKONS <onboarding@resend.dev>")
-	// Email sandbox Resend tidak perlu verifikasi domain sendiri — cocok untuk demo.
+	// Email sandbox Resend tidak perlu verifikasi domain sendiri, cocok untuk demo.
 	// Production harus verifikasi domain di dashboard.resend.com.
 
 	// ReminderLeadHours: berapa jam sebelum slot dimulai reminder dikirim.
@@ -138,7 +138,7 @@ func Load() (Config, error) {
 
 	// CORSAllowedOrigins: daftar origin yang boleh cross-origin request.
 	// Default dev: localhost:3000. Kalau CORS_ALLOWED_ORIGINS di-set, default
-	// tidak dipakai — origin yang di-set di env adalah SATU-SATUNYA yang
+	// tidak dipakai; origin yang di-set di env adalah SATU-SATUNYA yang
 	// diizinkan (localhost tidak bocor ke production).
 	cfg.CORSAllowedOrigins = []string{"http://localhost:3000"}
 	if origins := os.Getenv("CORS_ALLOWED_ORIGINS"); origins != "" {

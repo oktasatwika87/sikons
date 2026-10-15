@@ -1,5 +1,5 @@
 /**
- * Test halaman /ketersediaan — MSW integration tests.
+ * Test halaman /ketersediaan: MSW integration tests.
  *
  * Test terpenting:
  * 1. Summary panel muncul dengan bookings_cancelled > 0 + penekanan visual
@@ -36,7 +36,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
-/** Handler bootstrap sesi — role lecturer supaya nav tampilkan link ketersediaan. */
+/** Handler bootstrap sesi: role lecturer supaya nav tampilkan link ketersediaan. */
 function meHandler(overrides?: { id?: string; role?: UserResponse["role"] }) {
   return sessionHandlers({
     user: {
@@ -50,14 +50,14 @@ function meHandler(overrides?: { id?: string; role?: UserResponse["role"] }) {
   });
 }
 
-/** Rules handler — daftar kosong. */
+/** Rules handler: daftar kosong. */
 function emptyRulesHandler() {
   return http.get(`${BASE_URL}/availability-rules`, () =>
     HttpResponse.json({ rules: [] })
   );
 }
 
-/** Exceptions handler — daftar kosong. */
+/** Exceptions handler: daftar kosong. */
 function emptyExceptionsHandler() {
   return http.get(`${BASE_URL}/availability-exceptions`, ({ request }) => {
     const url = new URL(request.url);
@@ -227,7 +227,7 @@ describe("/ketersediaan page", () => {
     );
     await userEvent.click(endButtons[0]);
 
-    // Konfirmasi di dialog — tombol "Akhiri" di dalam dialog (yang kedua)
+    // Konfirmasi di dialog: tombol "Akhiri" di dalam dialog (yang kedua)
     const confirmButtons = await waitFor(() =>
       screen.getAllByRole("button", { name: "Akhiri" })
     );

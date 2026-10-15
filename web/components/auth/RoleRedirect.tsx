@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 /**
  * Redirect ke halaman sesuai role untuk user yang sudah login.
  *
- * Pola: sama dengan RequireAuth — cek auth.status di useEffect,
+ * Pola: sama dengan RequireAuth: cek auth.status di useEffect,
  * redirect pakai router.replace().
  * User anonim melihat landing page, bukan di-redirect.
  */

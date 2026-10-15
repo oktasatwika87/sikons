@@ -12,7 +12,7 @@ import (
 )
 
 // ErrNotFound dikembalikan saat aturan/pengecualian tidak ditemukan.
-// Dipakai untuk menghasilkan 404, bukan 403 — 403 mengonfirmasi keberadaan.
+// Dipakai untuk menghasilkan 404, bukan 403: 403 mengonfirmasi keberadaan.
 var ErrNotFound = errors.New("tidak ditemukan")
 
 // ErrRuleConflict dikembalikan saat aturan baru bertabrakan dengan yang ada.

@@ -156,7 +156,7 @@ func run() error {
 			continue
 		}
 
-		// Senin–Jumat, 09:00–12:00 dan 13:00–17:00, slot 30 menit.
+		// Senin-Jumat, 09:00-12:00 dan 13:00-17:00, slot 30 menit.
 		// Waktu Jakarta, senin=1 .. jumat=5.
 		rules := [][4]string{
 			{"1", "09:00", "12:00"},
@@ -199,7 +199,7 @@ func run() error {
 				userID, dayOfWeek, startTime, endTime,
 			)
 			if err != nil {
-				return fmt.Errorf("gagal insert aturan ketersediaan %s %s–%s: %w",
+				return fmt.Errorf("gagal insert aturan ketersediaan %s %s-%s: %w",
 					dayOfWeek, startTime, endTime, err)
 			}
 		}

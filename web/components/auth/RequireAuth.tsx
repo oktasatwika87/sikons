@@ -15,7 +15,7 @@ interface RequireAuthProps {
  * - status "anonymous": redirect ke /login?next=<path-sekarang>.
  * - status "authenticated": render children.
  *
- * Tidak ada middleware Next.js — murni client-side.
+ * Tidak ada middleware Next.js: murni client-side.
  */
 export function RequireAuth({ children }: RequireAuthProps) {
   const { auth } = useAuth();

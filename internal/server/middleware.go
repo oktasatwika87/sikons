@@ -14,7 +14,7 @@ import (
 // terakhir", teks bebas memaksamu memakai grep dan regex; JSON dengan field
 // `status` bisa disaring langsung.
 //
-// Bentuk fungsi ini — menerima http.Handler dan mengembalikan http.Handler —
+// Bentuk fungsi ini: menerima http.Handler dan mengembalikan http.Handler;
 // adalah pola middleware standar Go. Tidak ada yang ajaib: setiap middleware
 // membungkus handler berikutnya seperti lapisan bawang.
 func (s *Server) requestLogger(next http.Handler) http.Handler {

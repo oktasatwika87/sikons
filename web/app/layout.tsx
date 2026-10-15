@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SIKONS — Sistem Reservasi Konsultasi Dosen",
+  title: "SIKONS: Sistem Reservasi Konsultasi Dosen",
   description: "Sistem reservasi konsultasi dosen secara online",
 };
 

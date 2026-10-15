@@ -1,5 +1,5 @@
 -- =============================================================================
--- M4b — reminder email H-1
+-- M4b, reminder email H-1
 --
 -- Menambah nilai 'skipped' ke enum notification_status.
 --

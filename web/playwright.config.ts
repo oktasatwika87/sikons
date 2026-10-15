@@ -12,7 +12,7 @@ import { defineConfig, devices } from "@playwright/test";
  * Pola:
  * - Hanya chromium. workers 1 + fullyParallel false supaya tidak ada balapan
  *   antar-test terhadap DB.
- * - testMatch *.spec.ts → file `e2e/responsive-screenshots.ts` TIDAK ikut
+ * - testMatch *.spec.ts -> file `e2e/responsive-screenshots.ts` TIDAK ikut
  *   jalan. Skrip itu manual (`tsx e2e/responsive-screenshots.ts`).
  * - timezoneId Asia/Jakarta, sesuai zona tampilan aplikasi.
  * - baseURL http://localhost:3000 karena Next.js default.
@@ -46,7 +46,7 @@ export default defineConfig({
 
   webServer: [
     {
-      // API: binary hasil `go build -o bin/api ./cmd/api`. BUKAN `go run` —
+      // API: binary hasil `go build -o bin/api ./cmd/api`. BUKAN `go run`;
       // `go run` menjaga source tree terkunci dan menambah startup time.
       // cwd: '..' = root project (sikons), supaya .env + bin/ di-load benar.
       // Env (DATABASE_URL, JWT_SECRET, CORS_ALLOWED_ORIGINS, dst) diwarisi
@@ -60,7 +60,7 @@ export default defineConfig({
       stderr: "pipe",
     },
     {
-      // Next.js: `next start`, BUKAN `next dev` — supaya tidak ada
+      // Next.js: `next start`, BUKAN `next dev`: supaya tidak ada
       // hot-reload yang bisa ganggu test. next start butuh output `next build`
       // yang dibuat sebelum `make e2e` menjalankan Playwright.
       // Perhatikan: -p 3000 dieksplisitkan supaya sesuai baseURL dan CORS.

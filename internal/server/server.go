@@ -44,7 +44,7 @@ type Server struct {
 //
 // Alasannya praktis: tiap milestone menambah satu dependency baru (booking di
 // M3, notifikasi di M4). Dengan parameter berjejer, setiap penambahan mengubah
-// signature New dan memaksa semua pemanggil — termasuk setiap test — ikut
+// signature New dan memaksa semua pemanggil: termasuk setiap test: ikut
 // diedit. Dengan struct, penambahan field tidak merusak apa pun yang sudah ada.
 type Deps struct {
 	DB           DB
@@ -65,7 +65,7 @@ type Deps struct {
 //   - package server tidak perlu mengimpor pgx sama sekali
 //   - test bisa menyodorkan DB palsu yang sengaja gagal, tanpa Postgres
 //
-// *pgxpool.Pool memenuhi interface ini tanpa perlu mendeklarasikan apa pun —
+// *pgxpool.Pool memenuhi interface ini tanpa perlu mendeklarasikan apa pun;
 // di Go, sebuah tipe memenuhi interface cukup dengan punya method-nya.
 // Interface ini akan tumbuh seiring kebutuhan, tapi tetap sesempit mungkin:
 // makin banyak method di interface, makin susah dibuat palsunya saat test.
@@ -92,14 +92,14 @@ func New(cfg config.Config, deps Deps) *Server {
 //
 // http.Handler adalah interface dengan satu method: ServeHTTP. Mengembalikan
 // interface, bukan tipe konkretnya, berarti pemanggil tidak bisa bergantung
-// pada chi secara diam-diam — kalau suatu saat router-nya diganti, tidak ada
+// pada chi secara diam-diam: kalau suatu saat router-nya diganti, tidak ada
 // kode lain yang ikut berubah. Ini kebiasaan yang sangat khas Go: terima
-// interface, kembalikan struct — kecuali saat interface-nya memang kontrak
+// interface, kembalikan struct: kecuali saat interface-nya memang kontrak
 // yang ingin kamu tegakkan, seperti di sini.
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 
-	// CORS harus paling awal — sebelum middleware lain yang bisa mengirim header.
+	// CORS harus paling awal: sebelum middleware lain yang bisa mengirim header.
 	// Dipakai untuk mengizinkan Next.js (M5) mengakses API dari origin berbeda.
 	corsHandler := cors.Handler(cors.Options{
 		AllowedOrigins:   s.cfg.CORSAllowedOrigins,
@@ -129,7 +129,7 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/auth/refresh", s.handleRefresh)
 		r.Post("/auth/logout", s.handleLogout)
 
-		// Browsing dosen — publik karena:
+		// Browsing dosen: publik karena:
 		// - Tidak ada data sensitif yang terbuka.
 		// - Portfolio butuh bisa dilihat recruiter sebelum login.
 		// - Kalender slot pun tidak membocorkan data booking mahasiswa.
@@ -138,12 +138,12 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/lecturers/{id}/slots", s.handleGetLecturerSlots)
 
 		// Butuh access token. Group membuat middleware hanya berlaku untuk
-		// rute di dalamnya — rute publik di atas tidak ikut terkena.
+		// rute di dalamnya: rute publik di atas tidak ikut terkena.
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
 			r.Get("/me", s.handleMe)
 
-			// Aturan ketersediaan — milik dosen, butuh role lecturer.
+			// Aturan ketersediaan: milik dosen, butuh role lecturer.
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireRole(auth.RoleLecturer))
 				r.Post("/availability-rules", s.handleCreateAvailabilityRule)
@@ -155,7 +155,7 @@ func (s *Server) Routes() http.Handler {
 				r.Delete("/availability-exceptions/{id}", s.handleDeleteAvailabilityException)
 			})
 
-			// Booking — mahasiswa membuat, semua peran melihat.
+			// Booking: mahasiswa membuat, semua peran melihat.
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireRole(auth.RoleStudent))
 				r.Post("/bookings", s.handleCreateBooking)

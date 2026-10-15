@@ -18,7 +18,7 @@ import (
 const secretUji = "secret-uji-yang-panjangnya-lebih-dari-32-karakter"
 
 // Test di file ini TIDAK butuh database. Yang diuji adalah middleware, dan
-// middleware tidak menyentuh database sama sekali — dia hanya membaca header
+// middleware tidak menyentuh database sama sekali: dia hanya membaca header
 // lalu memverifikasi tanda tangan token.
 func serverToken(t *testing.T) (*Server, *auth.TokenIssuer) {
 	t.Helper()

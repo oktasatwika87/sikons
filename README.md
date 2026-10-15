@@ -1,6 +1,6 @@
-# SIKONS — Sistem Reservasi Konsultasi Dosen
+# SIKONS, Sistem Reservasi Konsultasi Dosen
 
-> README ini masih kerangka. Diisi lengkap di M8 — berisi KEPUTUSAN dan
+> README ini masih kerangka. Diisi lengkap di M8, berisi KEPUTUSAN dan
 > TRADE-OFF, bukan cara install.
 
 ## Menjalankan di lokal
@@ -38,10 +38,10 @@ Frontend Next.js 15 (App Router) di port 3000. API backend di 8080 sudah dikonfi
 
 ## Status
 
-- [x] M1 — kerangka repo, Docker Compose, skema database
-- [ ] M2 — auth + RBAC
-- [~] M3 — booking + locking + concurrency test selesai; ketersediaan & generator slot menyusul
-- [ ] M4 — cancel, worker reminder
-- [ ] M5–M6 — frontend
-- [ ] M7 — CI + deploy
-- [ ] M8 — dokumentasi
+- [x] M1, kerangka repo, Docker Compose, skema database
+- [ ] M2, auth + RBAC
+- [~] M3, booking + locking + concurrency test selesai; ketersediaan & generator slot menyusul
+- [ ] M4, cancel, worker reminder
+- [ ] M5-M6, frontend
+- [ ] M7, CI + deploy
+- [ ] M8, dokumentasi

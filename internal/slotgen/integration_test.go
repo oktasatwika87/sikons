@@ -598,7 +598,7 @@ func TestReconcile_BookingYangMasihSahTidakDisentuh(t *testing.T) {
 
 	assertBookingDanSlotUtuh(t, slotID)
 
-	// Variasi 2: tambah pengecualian full day di SELASA — hari yang berbeda
+	// Variasi 2: tambah pengecualian full day di SELASA: hari yang berbeda
 	// dari slot Senin. Aturan Senin masih berlaku, slot 09:00 masih sah,
 	// jadi sekali lagi TIDAK boleh ada yang disentuh.
 	_, err = poolUji.Exec(context.Background(), `
@@ -625,7 +625,7 @@ func TestReconcile_BookingYangMasihSahTidakDisentuh(t *testing.T) {
 }
 
 // assertBookingDanSlotUtuh memverifikasi bahwa booking confirmed, slot 'booked',
-// withdrawn_at NULL, dan tidak ada notifikasi — dengan kata lain, reconcile
+// withdrawn_at NULL, dan tidak ada notifikasi: dengan kata lain, reconcile
 // sebelumnya tidak menyentuhnya. Dipakai oleh
 // TestReconcile_BookingYangMasihSahTidakDisentuh untuk dua variasi.
 func assertBookingDanSlotUtuh(t *testing.T, slotID string) {
@@ -717,7 +717,7 @@ func TestReconcile_WithdrawnSlotTidakBisaDipesan(t *testing.T) {
 }
 
 // TestReconcile_SlotMasaLalu_DenganBookingConfirmed: slot masa lalu dengan booking
-// confirmed tidak boleh disentuh sama sekali — tidak dihapus, tidak di-withdraw,
+// confirmed tidak boleh disentuh sama sekali: tidak dihapus, tidak di-withdraw,
 // booking tidak dibatalkan, tidak ada notification.
 func TestReconcile_SlotMasaLalu_DenganBookingConfirmed(t *testing.T) {
 	dosen := buatDosen(t)

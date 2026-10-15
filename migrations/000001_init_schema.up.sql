@@ -1,5 +1,5 @@
 -- =============================================================================
--- SIKONS — skema awal
+-- SIKONS, skema awal
 --
 -- Aturan yang dipegang di seluruh file ini:
 --   1. Semua waktu absolut disimpan timestamptz (UTC). Waktu "jam dinding" yang
@@ -23,7 +23,7 @@ CREATE TYPE booking_status      AS ENUM ('confirmed', 'cancelled', 'completed', 
 CREATE TYPE notification_status AS ENUM ('pending', 'sent', 'failed');
 
 -- Satu-satunya trigger di database ini. updated_at itu mekanis, bukan logika
--- bisnis — menaruhnya di sini berarti mustahil lupa mengisinya dari Go.
+-- bisnis; menaruhnya di sini berarti mustahil lupa mengisinya dari Go.
 CREATE FUNCTION set_updated_at() RETURNS trigger AS $$
 BEGIN
     NEW.updated_at = now();
@@ -80,7 +80,7 @@ CREATE TABLE availability_rules (
     id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     lecturer_id       uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     -- 0 = Minggu .. 6 = Sabtu. Sengaja mengikuti EXTRACT(DOW) Postgres,
-    -- time.Weekday Go, dan Date.getDay() JavaScript sekaligus — supaya tidak
+    -- time.Weekday Go, dan Date.getDay() JavaScript sekaligus, supaya tidak
     -- ada konversi diam-diam di perbatasan antar bahasa.
     day_of_week       smallint    NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
     start_time        time        NOT NULL,
@@ -144,7 +144,7 @@ CREATE INDEX availability_exceptions_lookup_idx
 
 
 -- ---------------------------------------------------------------------------
--- slot & booking — inti project
+-- slot & booking, inti project
 -- ---------------------------------------------------------------------------
 CREATE TABLE slots (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),

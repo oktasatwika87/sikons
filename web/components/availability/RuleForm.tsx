@@ -110,7 +110,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
         </select>
       </div>
 
-      {/* Jam mulai & selesai — satu kolom di mobile */}
+      {/* Jam mulai & selesai: satu kolom di mobile */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="start_time">Jam Mulai</Label>
@@ -160,7 +160,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
       {/* Preview slot count */}
       {parsed.success && slotCount > 0 && (
         <p className="text-sm text-muted-foreground">
-          {form.start_time}–{form.end_time}, sesi {form.slot_duration_min} menit →{" "}
+          {form.start_time}-{form.end_time}, sesi {form.slot_duration_min} menit {"->"}{" "}
           <strong>{slotCount} slot</strong> per{" "}
           {DAY_OPTIONS.find((d) => d.value === form.day_of_week)?.label}
         </p>
@@ -171,7 +171,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
         </p>
       )}
 
-      {/* Tanggal berlaku — satu kolom di mobile */}
+      {/* Tanggal berlaku: satu kolom di mobile */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="effective_from">Berlaku Dari</Label>

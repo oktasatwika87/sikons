@@ -74,7 +74,7 @@ export function ExceptionList({ from, to, onSummary }: ExceptionListProps) {
               <p className="mt-0.5 text-sm text-muted-foreground">{exc.reason}</p>
               {!exc.is_full_day && exc.start_time && exc.end_time && (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {exc.start_time}–{exc.end_time}
+                  {exc.start_time}-{exc.end_time}
                 </p>
               )}
               {exc.is_full_day && (

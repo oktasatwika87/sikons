@@ -23,7 +23,7 @@ interface BookingDialogProps {
   slot: Slot | null;
   lecturerId: string;
   lecturerName: string;
-  /** Callback saat error SLOT_ALREADY_BOOKED — parent component mengatur banner. */
+  /** Callback saat error SLOT_ALREADY_BOOKED: parent component mengatur banner. */
   onAlreadyBookedError: (message: string) => void;
 }
 
@@ -106,7 +106,7 @@ export function BookingDialog({
               {slot && (
                 <>
                   {formatJakartaLongDate(slot.start_at)} ·{" "}
-                  {formatJakartaTime(slot.start_at)}–{formatJakartaTime(slot.end_at)}
+                  {formatJakartaTime(slot.start_at)}-{formatJakartaTime(slot.end_at)}
                   <br />
                   dengan {lecturerName}
                 </>

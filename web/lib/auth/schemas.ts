@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Email wajib "@" — sesuai validasi backend (strings.Contains). */
+/** Email wajib "@": sesuai validasi backend (strings.Contains). */
 export const loginSchema = z.object({
   email: z.string().min(1, "Email wajib diisi"),
   password: z.string().min(1, "Password wajib diisi"),
@@ -9,12 +9,12 @@ export const loginSchema = z.object({
 export type LoginValues = z.infer<typeof loginSchema>;
 
 /**
- * Register — field persis sama dengan registerRequest di backend:
+ * Register: field persis sama dengan registerRequest di backend:
  * email, password, full_name, identity_number.
  * Tidak ada field role (hardcoded 'student' di backend).
  *
  * Confirm password adalah field UI murni, tidak dikirim ke backend.
- * identity_number tanpa format baku — backend tidak punya validator.
+ * identity_number tanpa format baku: backend tidak punya validator.
  */
 export const registerSchema = z
   .object({

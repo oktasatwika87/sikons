@@ -23,10 +23,10 @@ function AuthReporter() {
   );
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+// Tests
 
 describe("AuthProvider bootstrap", () => {
-  it("bootstrap sukses: refresh lalu /me → status authenticated", async () => {
+  it("bootstrap sukses: refresh lalu /me -> status authenticated", async () => {
     server.use(
       ...sessionHandlers({
         user: {
@@ -55,7 +55,7 @@ describe("AuthProvider bootstrap", () => {
     });
   });
 
-  it("bootstrap gagal: refresh 401 (belum login) → status anonymous (BUKAN error)", async () => {
+  it("bootstrap gagal: refresh 401 (belum login) -> status anonymous (BUKAN error)", async () => {
     server.use(
       ...anonymousHandlers()
     );

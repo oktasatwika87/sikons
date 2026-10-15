@@ -1,10 +1,10 @@
 /**
- * Test LoginForm — fokus: redirect setelah login sukses.
+ * Test LoginForm: fokus: redirect setelah login sukses.
  *
- * - Tanpa ?next= → fallback ke "/".
- * - Dengan ?next=/akun → push ke "/akun".
+ * - Tanpa ?next= -> fallback ke "/".
+ * - Dengan ?next=/akun -> push ke "/akun".
  *
- * next/navigation di-mock dengan vi.mock karena next/router bukan layer HTTP —
+ * next/navigation di-mock dengan vi.mock karena next/router bukan layer HTTP;
  * beda dengan useApiFetch yang sepenuhnya MSW.
  */
 import { describe, expect, it, beforeAll, afterEach, afterAll, vi } from "vitest";
@@ -35,7 +35,7 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
-// Impor SETELAH vi.mock — agar hook dapat versi yang sudah di-mock.
+// Impor SETELAH vi.mock: agar hook dapat versi yang sudah di-mock.
 const { LoginForm } = await import("@/components/auth/LoginForm");
 const { AuthProvider } = await import("@/lib/auth/AuthContext");
 
@@ -62,7 +62,7 @@ function setupLoginHandlers() {
 }
 
 describe("LoginForm redirect setelah login sukses", () => {
-  it("tanpa ?next= → redirect ke /", async () => {
+  it("tanpa ?next= -> redirect ke /", async () => {
     mockSearchParams = new URLSearchParams("");
     setupLoginHandlers();
 
@@ -72,7 +72,7 @@ describe("LoginForm redirect setelah login sukses", () => {
       </AuthProvider>
     );
 
-    // Tunggu bootstrap selesai — AuthProvider harus anonymous dulu.
+    // Tunggu bootstrap selesai: AuthProvider harus anonymous dulu.
     await waitFor(() => {
       expect(screen.queryByText("Memuat…")).not.toBeInTheDocument();
     });
@@ -93,7 +93,7 @@ describe("LoginForm redirect setelah login sukses", () => {
     expect(mockRouter.refresh).toHaveBeenCalled();
   });
 
-  it("dengan ?next=/akun → redirect ke /akun (bukan /)", async () => {
+  it("dengan ?next=/akun -> redirect ke /akun (bukan /)", async () => {
     mockSearchParams = new URLSearchParams("next=%2Fakun");
     setupLoginHandlers();
 
@@ -123,9 +123,9 @@ describe("LoginForm redirect setelah login sukses", () => {
     expect(mockRouter.refresh).toHaveBeenCalled();
   });
 
-  it("dengan ?next= kosong/absurd → fallback ke /", async () => {
-    // next= tanpa nilai — searchParams.get("next") kembalikan "" (string kosong),
-    // LoginForm treat ini sebagai "tidak ada next" → fallback ke /.
+  it("dengan ?next= kosong/absurd -> fallback ke /", async () => {
+    // next= tanpa nilai: searchParams.get("next") kembalikan "" (string kosong),
+    // LoginForm treat ini sebagai "tidak ada next" -> fallback ke /.
     mockSearchParams = new URLSearchParams("next=");
     setupLoginHandlers();
 

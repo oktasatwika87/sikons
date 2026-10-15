@@ -1,11 +1,11 @@
 /**
- * Test LecturerList — verifikasi filter dari URL diteruskan ke endpoint.
+ * Test LecturerList: verifikasi filter dari URL diteruskan ke endpoint.
  *
  * MSW mengintersep fetch dan merekam URL yang diminta; kita verifikasi
  * parameter URL (department, q, page) sampai utuh ke query string backend.
  *
  * next/navigation di-mock dengan vi.mock karena useSearchParams/useRouter
- * bukan layer HTTP — pola yang sama dengan LoginForm.test.tsx.
+ * bukan layer HTTP: pola yang sama dengan LoginForm.test.tsx.
  */
 import { type ReactNode } from "react";
 import { describe, expect, it, beforeAll, afterEach, afterAll, vi } from "vitest";
@@ -46,7 +46,7 @@ afterAll(() => server.close());
 
 const mockRefresh = mockRouter.refresh;
 
-// Impor SETELAH vi.mock — supaya hook dapat versi yang sudah di-mock.
+// Impor SETELAH vi.mock: supaya hook dapat versi yang sudah di-mock.
 const { LecturerList } = await import("@/components/lecturer/LecturerList");
 
 interface RequestLog {
@@ -55,7 +55,7 @@ interface RequestLog {
 }
 
 /**
- * Bootstrap MSW: /auth/me 401 (belum login — endpoint publik), /lecturers
+ * Bootstrap MSW: /auth/me 401 (belum login: endpoint publik), /lecturers
  * mengembalikan data fixture dan MEREKAM URL yang diminta.
  */
 function setupLecturersHandler(log: RequestLog[]) {
@@ -95,7 +95,7 @@ function renderWithProviders(ui: ReactNode) {
   );
 }
 
-describe("LecturerList — filter URL diteruskan ke endpoint", () => {
+describe("LecturerList: filter URL diteruskan ke endpoint", () => {
   it("department, q, dan page dari URL muncul sebagai query param /lecturers", async () => {
     mockSearchParams = new URLSearchParams(
       "department=Informatika&q=bud&page=2"
@@ -114,7 +114,7 @@ describe("LecturerList — filter URL diteruskan ke endpoint", () => {
 
     expect(log).toHaveLength(1);
     const url = new URL(log[0].url);
-    // useApiFetch menambahkan prefix NEXT_PUBLIC_API_URL — di test ini
+    // useApiFetch menambahkan prefix NEXT_PUBLIC_API_URL: di test ini
     // default-nya http://localhost:8080/api/v1.
     expect(url.pathname).toBe("/api/v1/lecturers");
     expect(url.searchParams.get("department")).toBe("Informatika");
@@ -122,7 +122,7 @@ describe("LecturerList — filter URL diteruskan ke endpoint", () => {
     expect(url.searchParams.get("page")).toBe("2");
   });
 
-  it("URL tanpa filter → /lecturers tanpa query string", async () => {
+  it("URL tanpa filter -> /lecturers tanpa query string", async () => {
     mockSearchParams = new URLSearchParams("");
     const log: RequestLog[] = [];
     setupLecturersHandler(log);

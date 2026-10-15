@@ -17,7 +17,7 @@ import (
 // goroutine bersamaan. Pool yang mengatur antreannya.
 //
 // Ukuran pool sengaja tidak dinaikkan tinggi-tinggi. Nanti di concurrency
-// test, 100 request paralel akan MENGANTRE di pool ini — dan itu memang yang
+// test, 100 request paralel akan MENGANTRE di pool ini: dan itu memang yang
 // kita inginkan: yang menang tetap satu, yang lain menunggu lalu dapat 409.
 func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	poolCfg, err := pgxpool.ParseConfig(dsn)

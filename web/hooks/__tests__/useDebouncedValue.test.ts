@@ -1,5 +1,5 @@
 /**
- * Test useDebouncedValue — verifikasi delay pembaruan nilai pakai fake timers.
+ * Test useDebouncedValue: verifikasi delay pembaruan nilai pakai fake timers.
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
@@ -54,13 +54,13 @@ describe("useDebouncedValue", () => {
     });
     rerender({ value: "d" });
 
-    // Total baru 200ms sejak perubahan pertama — belum boleh commit.
+    // Total baru 200ms sejak perubahan pertama: belum boleh commit.
     expect(result.current).toBe("a");
 
     act(() => {
       vi.advanceTimersByTime(350);
     });
-    // Setelah delay penuh dari perubahan TERAKHIR, hasilnya "d" — bukan "b".
+    // Setelah delay penuh dari perubahan TERAKHIR, hasilnya "d": bukan "b".
     expect(result.current).toBe("d");
   });
 });

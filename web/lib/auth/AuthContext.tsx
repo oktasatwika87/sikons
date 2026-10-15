@@ -31,7 +31,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /**
-   * Refresh token secara manual — dipanggil oleh useApiFetch saat 401.
+   * Refresh token secara manual: dipanggil oleh useApiFetch saat 401.
    * Mengembalikan `{ ok }` supaya pemanggil tidak perlu membaca `auth.status`
    * lewat closure (yang stale karena di-memoize dengan useCallback).
    */
@@ -94,7 +94,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   /**
    * Single-flight barrier untuk refresh.
-   * Simpan promise refresh yang sedang berjalan — request lain yang datang
+   * Simpan promise refresh yang sedang berjalan: request lain yang datang
    * saat refresh belum selesai akan await promise yang sama, bukan memulai
    * refresh baru.
    */
@@ -113,7 +113,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     []
   );
 
-  /** Set state jadi anonymous tanpa error — halaman publik tidak boleh error. */
+  /** Set state jadi anonymous tanpa error: halaman publik tidak boleh error. */
   const setAnonymous = useCallback(() => {
     setAuth({
       user: null,
@@ -126,11 +126,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   /**
    * Refresh token dengan single-flight.
    * - Kalau refreshInFlight sudah ada, return promise yang sama.
-   * - 409 REFRESH_IN_PROGRESS → retry sekali setelah 500ms.
-   * - Gagal final → setAnonymous().
+   * - 409 REFRESH_IN_PROGRESS -> retry sekali setelah 500ms.
+   * - Gagal final -> setAnonymous().
    *
    * Return `{ ok: boolean }` supaya pemanggil (useApiFetch) bisa memutuskan
-   * langkah berikutnya tanpa harus membaca state `auth` lewat closure —
+   * langkah berikutnya tanpa harus membaca state `auth` lewat closure;
    * closure `auth` di useApiFetch stale karena fetchWithRetry di-memoize
    * pakai useCallback.
    */
@@ -144,7 +144,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Pola retry saat dapat 409 REFRESH_IN_PROGRESS: jeda 500ms,
         // kalau masih 409 jeda 2000ms, baru setAnonymous kalau gagal
         // lagi. Backend bisa mengembalikan 409 saat rotasi "balasan
-        // hilang" sedang diproses (cabang 2a) — yaitu server commit
+        // hilang" sedang diproses (cabang 2a): yaitu server commit
         // tapi cookie baru tidak sampai browser. Browser mengirim
         // ulang token lama, server butuh waktu untuk menyelesaikan
         // rotasi. Jeda 500ms + 2000ms = 2.5 detik total, cukup untuk
@@ -193,7 +193,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const data = await callRefresh();
             return { ok: true, accessToken: applySuccess(data) };
           } catch {
-            // Semua percobaan gagal — set anonymous.
+            // Semua percobaan gagal: set anonymous.
             setAnonymous();
             return { ok: false };
           }
@@ -208,7 +208,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [setAnonymous]
   );
 
-  /** Login — simpan token di memory, set state authenticated. */
+  /** Login: simpan token di memory, set state authenticated. */
   const login = useCallback(
     async (email: string, password: string) => {
       const data = await callLogin(email, password);
@@ -217,7 +217,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [applyLogin]
   );
 
-  /** Logout — revoke token, hapus state. */
+  /** Logout: revoke token, hapus state. */
   const logout = useCallback(async () => {
     try {
       await callLogout();
@@ -238,7 +238,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * sehingga setiap reload berakhir anonymous dan pengguna terlempar ke
    * /login walau cookie-nya masih sah.
    *
-   * 401 saat bootstrap = kondisi normal "belum login" — BUKAN error.
+   * 401 saat bootstrap = kondisi normal "belum login": BUKAN error.
    * Jangan pernah set console.error di sini.
    */
   useEffect(() => {
@@ -266,7 +266,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   /** ----------------------------------------------------------------
    * Refresh proaktif terjadwal.
    * Menunggu sampai (expiresAt - MARGIN_MS), lalu refresh di background.
-   * Kalau gagal, diam-diam set anonymous — halaman publik tidak boleh error.
+   * Kalau gagal, diam-diam set anonymous: halaman publik tidak boleh error.
    */
   useEffect(() => {
     if (auth.status !== "authenticated" || !auth.expiresAt) return;

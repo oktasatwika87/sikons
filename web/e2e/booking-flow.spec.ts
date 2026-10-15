@@ -3,15 +3,15 @@ import { id as localeId } from "date-fns/locale";
 import { formatInTimeZone } from "date-fns-tz";
 
 /**
- * Skenario E2E SIKONS — dua peran dalam satu spec mode serial.
+ * Skenario E2E SIKONS: dua peran dalam satu spec mode serial.
  *
- * Test 1 — Mahasiswa:
- *   daftar → login → reload halaman (harus tetap login) → cari dosen
- *   demo dari seed → pilih slot tersedia → booking → verifikasi di
+ * Test 1: Mahasiswa:
+ *   daftar -> login -> reload halaman (harus tetap login) -> cari dosen
+ *   demo dari seed -> pilih slot tersedia -> booking -> verifikasi di
  *   /konsultasi.
  *
- * Test 2 — Dosen (akun seed):
- *   login → booking dari test 1 muncul di /dashboard → kalau backend
+ * Test 2: Dosen (akun seed):
+ *   login -> booking dari test 1 muncul di /dashboard -> kalau backend
  *   mengizinkan (sesi sudah dimulai) baru coba "Tandai Selesai" + isi
  *   catatan. Kalau tidak, cukup verifikasi booking muncul. Tidak
  *   mengakali jam.
@@ -23,14 +23,14 @@ import { formatInTimeZone } from "date-fns-tz";
  *   tetap yang meng-klik slot, submit, dan menampilkan hasil.
  * - Geser minggu maksimal 5 kali kalau minggu berjalan tidak punya slot
  *   valid.
- * - data-testid TIDAK dipakai — semua selector pakai getByRole /
+ * - data-testid TIDAK dipakai: semua selector pakai getByRole /
  *   getByLabel / getByText.
  */
 
 const API_BASE = "http://localhost:8080/api/v1";
 const TIMEZONE = "Asia/Jakarta";
 
-// Kredensial dosen demo — dibaca dari variabel lingkungan.
+// Kredensial dosen demo: dibaca dari variabel lingkungan.
 // Override lewat variabel lingkungan kalau seed berubah.
 const DOSEN_EMAIL = process.env.E2E_DOSEN_EMAIL ?? "budi@sikons.test";
 const DOSEN_PASSWORD = process.env.E2E_DOSEN_PASSWORD ?? "password123";
@@ -72,7 +72,7 @@ test.describe.serial("alur konsultasi E2E", () => {
     await page.getByLabel("Konfirmasi password").fill(password);
     await page.getByRole("button", { name: "Daftar", exact: true }).click();
 
-    // Register → redirect ke /login?registered=1 (TIDAK auto-login).
+    // Register -> redirect ke /login?registered=1 (TIDAK auto-login).
     await page.waitForURL(/\/login/);
     await expect(page.getByText("Registrasi berhasil, silakan masuk.")).toBeVisible();
 
@@ -82,12 +82,12 @@ test.describe.serial("alur konsultasi E2E", () => {
     await page.getByRole("button", { name: "Masuk", exact: true }).click();
     await page.waitForURL(/\/$/);
 
-    // 3. Reload halaman — harus TETAP login. Ini yang dites mutation
+    // 3. Reload halaman: harus TETAP login. Ini yang dites mutation
     //    kalau POST /auth/refresh dihapus dari bootstrap sesi.
-    //    JANGAN pakai page.waitForURL(/\/dosen/) — URL sudah cocok
+    //    JANGAN pakai page.waitForURL(/\/dosen/): URL sudah cocok
     //    sebelum reload karena /  langsung redirect ke /dosen lewat
     //    RoleRedirect saat auth.authenticated. Yang kita tunggu
-    //    adalah konfirmasi bahwa bootstrap sesi SELESAI — yaitu
+    //    adalah konfirmasi bahwa bootstrap sesi SELESAI: yaitu
     //    Nav menampilkan nama user (elemen yang hanya muncul kalau
     //    auth.status === "authenticated" && auth.user). Tanpa ini,
     //    klik slot di langkah 7 bisa kena 401 karena access token
@@ -156,15 +156,15 @@ test.describe.serial("alur konsultasi E2E", () => {
     }
 
     // 7. Klik slot yang sesuai. Cari di kolom hari yang benar (label
-    //    tanggal "d MMM" di zona Jakarta, locale id → "12 Okt"), lalu
+    //    tanggal "d MMM" di zona Jakarta, locale id -> "12 Okt"), lalu
     //    tombol dengan time range.
     const dayLabel = formatInTimeZone(slotStart, TIMEZONE, "d MMM", {
       locale: localeId,
     });
     const startText = formatInTimeZone(slotStart, TIMEZONE, "HH:mm");
     const endText = formatInTimeZone(new Date(validSlot.end_at), TIMEZONE, "HH:mm");
-    // En-dash (U+2013) — sama dengan yang dipakai LecturerDetail.tsx.
-    const timeRange = `${startText}–${endText}`;
+    // Hyphen-minus: sama dengan yang dipakai LecturerDetail.tsx.
+    const timeRange = `${startText}-${endText}`;
 
     const dayDateEl = page.getByText(dayLabel, { exact: true }).first();
     await expect(dayDateEl, `header tanggal "${dayLabel}" minggu ini`).toBeVisible();
@@ -182,13 +182,13 @@ test.describe.serial("alur konsultasi E2E", () => {
     await dialog.getByLabel("Topik").fill(state.bookingTopic);
     await dialog.getByRole("button", { name: "Pesan", exact: true }).click();
 
-    // Tunggu dialog tertutup → booking sukses.
+    // Tunggu dialog tertutup -> booking sukses.
     await expect(dialog).toBeHidden({ timeout: 15_000 });
 
     // 9. Buka /konsultasi, verifikasi booking ada.
     await page.goto("/konsultasi");
     await expect(page.getByRole("heading", { name: "Riwayat Konsultasi" })).toBeVisible();
-    // Verifikasi topik muncul di tabel (desktop view) — selector eksplisit
+    // Verifikasi topik muncul di tabel (desktop view): selector eksplisit
     // supaya tidak ambigu dengan mobile card yang md:hidden.
     await expect(
       page.locator("table").getByText(state.bookingTopic).first()
@@ -218,7 +218,7 @@ test.describe.serial("alur konsultasi E2E", () => {
 
     // 3. Kalau ada tombol "Tandai Selesai" (artinya sesi sudah dimulai),
     //    buka dialog, isi catatan, simpan. Kalau tidak ada, jangan apa-apa
-    //    — cukup verifikasi booking muncul (sesuai instruksi: jangan
+    //   : cukup verifikasi booking muncul (sesuai instruksi: jangan
     //    mengakali jam).
     const completeButton = page
       .getByRole("button", { name: "Tandai Selesai", exact: true })
@@ -229,7 +229,7 @@ test.describe.serial("alur konsultasi E2E", () => {
         type: "skip-complete",
         description:
           "Sesi belum dimulai (tombol Tandai Selesai tidak ada). " +
-          "Cukup verifikasi booking muncul — backend tidak mengizinkan complete sebelum jam sesi.",
+          "Cukup verifikasi booking muncul: backend tidak mengizinkan complete sebelum jam sesi.",
       });
       return;
     }
@@ -258,7 +258,7 @@ function weekIndexJakarta(date: Date): number {
   // Tanggal YYYY-MM-DD di zona Jakarta.
   const dateKey = formatInTimeZone(date, TIMEZONE, "yyyy-MM-dd");
   const [y, m, d] = dateKey.split("-").map(Number);
-  // Hitung hari sejak epoch (UTC midnight) — cukup untuk indeks minggu.
+  // Hitung hari sejak epoch (UTC midnight): cukup untuk indeks minggu.
   const utcMillis = Date.UTC(y, m - 1, d);
   const daysSinceEpoch = Math.floor(utcMillis / (24 * 60 * 60 * 1000));
   return Math.floor((daysSinceEpoch - (isoDay - 1)) / 7);

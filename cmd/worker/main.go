@@ -35,7 +35,7 @@ func run() error {
 	// Validasi bahwa ResendAPIKey tidak kosong.
 	// cmd/api boleh tanpa ini (tidak mengirim email), tapi worker harus punya.
 	if cfg.ResendAPIKey == "" {
-		return errors.New("RESEND_API_KEY belum diisi — worker tidak bisa mengirim email tanpa API key")
+		return errors.New("RESEND_API_KEY belum diisi: worker tidak bisa mengirim email tanpa API key")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

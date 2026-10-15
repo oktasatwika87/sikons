@@ -1,5 +1,5 @@
 /**
- * Test useApiFetch — retry-once + single-flight + 409 retry + final-fail.
+ * Test useApiFetch: retry-once + single-flight + 409 retry + final-fail.
  *
  * Pendekatan: MSW mengintersep HTTP di level fetch global, sehingga hitungan
  * panggilan /auth/refresh cukup disimpan di closure biasa (object `state`),
@@ -69,7 +69,7 @@ function ReadyChildren({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-/** Rekam setiap perubahan status AuthContext — dipakai untuk verifikasi akhir. */
+/** Rekam setiap perubahan status AuthContext: dipakai untuk verifikasi akhir. */
 function StatusRecorder({ onStatus }: { onStatus: (s: string) => void }) {
   const { auth } = useAuth();
   // Pakai useEffect supaya ref tidak diakses saat render.
@@ -89,7 +89,7 @@ interface FetchProbeProps {
   onError: (err: unknown) => void;
 }
 
-/** Komponen probe — menjalankan satu fetchWithRetry saat mount. */
+/** Komponen probe: menjalankan satu fetchWithRetry saat mount. */
 function FetchProbe({ path, onResult, onError }: FetchProbeProps) {
   const fetchWithRetry = useApiFetch();
   // Simpan callback di ref + update via effect supaya stabil antar-render
@@ -121,7 +121,7 @@ function FetchProbe({ path, onResult, onError }: FetchProbeProps) {
 // ------------------------------------------------------------------ Tests
 
 describe("useApiFetch", () => {
-  it("retry-once sukses: 401 TOKEN_EXPIRED → refresh → retry → 200", async () => {
+  it("retry-once sukses: 401 TOKEN_EXPIRED -> refresh -> retry -> 200", async () => {
     const state = { refreshCalls: 0, endpointCalls: 0 };
 
     server.use(
@@ -165,7 +165,7 @@ describe("useApiFetch", () => {
     expect(state.endpointCalls).toBe(2);
   });
 
-  it("single-flight: banyak 401 bersamaan → cuma satu /auth/refresh", async () => {
+  it("single-flight: banyak 401 bersamaan -> cuma satu /auth/refresh", async () => {
     const state = { refreshCalls: 0, endpointCalls: 0 };
     const PARALLEL = 3;
 
@@ -182,8 +182,8 @@ describe("useApiFetch", () => {
       }),
       http.get(`${BASE_URL}/protected`, () => {
         state.endpointCalls++;
-        // Batch pertama: PARALLEL panggilan → semua 401.
-        // Batch kedua: PARALLEL retry → semua 200.
+        // Batch pertama: PARALLEL panggilan -> semua 401.
+        // Batch kedua: PARALLEL retry -> semua 200.
         if (state.endpointCalls <= PARALLEL) {
           return HttpResponse.json(
             { error: { code: "TOKEN_EXPIRED", message: "" } },
@@ -215,19 +215,19 @@ describe("useApiFetch", () => {
     for (const r of all) expect(r).toEqual({ data: "ok" });
     // Kunci single-flight: tepat satu refresh call, bukan N.
     expect(state.refreshCalls).toBe(1);
-    // Endpoint dipanggil 2x per probe (401 lalu retry) → 2 * PARALLEL.
+    // Endpoint dipanggil 2x per probe (401 lalu retry) -> 2 * PARALLEL.
     expect(state.endpointCalls).toBe(2 * PARALLEL);
   });
 
-  it("409 REFRESH_IN_PROGRESS dari /auth/refresh → retry setelah delay, lalu sukses", async () => {
+  it("409 REFRESH_IN_PROGRESS dari /auth/refresh -> retry setelah delay, lalu sukses", async () => {
     const state = { refreshCalls: 0, endpointCalls: 0 };
 
     server.use(
       meHandler(),
       refreshAfterBoot(() => {
         state.refreshCalls++;
-        // Panggilan pertama: simulasi "sedang ada refresh lain" → 409.
-        // Retry berikutnya (setelah 500ms) → 200.
+        // Panggilan pertama: simulasi "sedang ada refresh lain" -> 409.
+        // Retry berikutnya (setelah 500ms) -> 200.
         if (state.refreshCalls === 1) {
           return HttpResponse.json(
             { error: { code: "REFRESH_IN_PROGRESS", message: "in progress" } },
@@ -266,12 +266,12 @@ describe("useApiFetch", () => {
     expect(result).toEqual({ data: "ok" });
     // Refresh: panggilan 1 dapat 409, panggilan 2 (setelah 500ms) sukses.
     expect(state.refreshCalls).toBe(2);
-    // Retry pertama delay 500ms sebelum retry — minimal harus sudah lewat.
+    // Retry pertama delay 500ms sebelum retry: minimal harus sudah lewat.
     expect(elapsed).toBeGreaterThanOrEqual(450);
-    // AuthContext TIDAK treat 409 sebagai anonymous — request asli tetap resolve.
+    // AuthContext TIDAK treat 409 sebagai anonymous: request asli tetap resolve.
   });
 
-  it("409 REFRESH_IN_PROGRESS dua kali → retry kedua (2000ms) sukses", async () => {
+  it("409 REFRESH_IN_PROGRESS dua kali -> retry kedua (2000ms) sukses", async () => {
     const state = { refreshCalls: 0, endpointCalls: 0 };
 
     server.use(
@@ -321,7 +321,7 @@ describe("useApiFetch", () => {
     expect(elapsed).toBeGreaterThanOrEqual(2450);
   });
 
-  it("409 REFRESH_IN_PROGRESS tiga kali → status anonymous + request throw UNAUTHENTICATED", async () => {
+  it("409 REFRESH_IN_PROGRESS tiga kali -> status anonymous + request throw UNAUTHENTICATED", async () => {
     const state = { refreshCalls: 0 };
     const statuses: string[] = [];
 
@@ -329,7 +329,7 @@ describe("useApiFetch", () => {
       meHandler(),
       refreshAfterBoot(() => {
         state.refreshCalls++;
-        // Selalu 409 — semua 3 percobaan gagal.
+        // Selalu 409: semua 3 percobaan gagal.
         return HttpResponse.json(
           { error: { code: "REFRESH_IN_PROGRESS", message: "in progress" } },
           { status: 409 }
@@ -382,7 +382,7 @@ describe("useApiFetch", () => {
     );
   });
 
-  it("refresh gagal final (401) → status anonymous + request asli throw UNAUTHENTICATED", async () => {
+  it("refresh gagal final (401) -> status anonymous + request asli throw UNAUTHENTICATED", async () => {
     const state = { refreshCalls: 0, endpointCalls: 0 };
     const statuses: string[] = [];
 
@@ -418,7 +418,7 @@ describe("useApiFetch", () => {
           <FetchProbe
             path="/protected"
             onResult={() => {
-              /* tidak dipanggil — test ini expect error */
+              /* tidak dipanggil: test ini expect error */
             }}
             onError={(e) => {
               capturedError = e;
@@ -435,12 +435,12 @@ describe("useApiFetch", () => {
 
     expect(capturedError).toBeInstanceOf(ApiError);
     expect((capturedError as ApiError).code).toBe("UNAUTHENTICATED");
-    // Refresh hanya dicoba sekali — gagal → setAnonymous(), bukan loop.
+    // Refresh hanya dicoba sekali: gagal -> setAnonymous(), bukan loop.
     expect(state.refreshCalls).toBe(1);
     // Tidak ada retry endpoint setelah refresh gagal (result.ok === false
-    // → throw langsung sebelum doFetch kedua).
+    // -> throw langsung sebelum doFetch kedua).
     expect(state.endpointCalls).toBe(1);
-    // AuthContext sudah anonymous — bukan stuck di "authenticated".
+    // AuthContext sudah anonymous: bukan stuck di "authenticated".
     await waitFor(() => {
       expect(statuses).toContain("anonymous");
     });

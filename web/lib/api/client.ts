@@ -73,7 +73,7 @@ export async function apiFetch<T>(
   try {
     data = await response.json();
   } catch {
-    // Response bukan JSON — throw generic error
+    // Response bukan JSON: throw generic error
     if (!response.ok) {
       throw new ApiError(
         "RESPONSE_NOT_JSON",

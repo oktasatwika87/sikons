@@ -20,7 +20,7 @@ import (
 // Ini kebalikan dari yang saya lakukan di package server, dan itu disengaja.
 // Aturannya: pakai interface untuk hal yang ingin kamu PALSUKAN, pakai yang
 // asli untuk hal yang ingin kamu BUKTIKAN. Yang sedang diuji di sini adalah
-// perilaku penguncian baris Postgres — database palsu tidak membuktikan
+// perilaku penguncian baris Postgres: database palsu tidak membuktikan
 // apa pun tentang itu.
 type Service struct {
 	pool              *pgxpool.Pool
@@ -63,11 +63,11 @@ func (s *Service) ReminderLeadHours() int {
 //
 // Urutan di dalam transaction TIDAK BOLEH diubah. Berikut alasannya:
 //
-// LANGKAH 0 (idempotency — SEBELUM kunci apapun):
+// LANGKAH 0 (idempotency: SEBELUM kunci apapun):
 //
 //	Klaim idempotency key SEBELUM kunci baris. Kalau diletakkan di akhir,
 //	request kembar sudah keburu kalah di kunci slot dan menerima
-//	ErrSlotAlreadyBooked — persis yang mau dicegah.
+//	ErrSlotAlreadyBooked: persis yang mau dicegah.
 //
 //	ON CONFLICT DO NOTHING terhadap transaksi kembar yang belum commit membuat
 //	Postgres MENUNGGU, bukan mengembalikan nol baris. Transaction yang menang
@@ -80,12 +80,12 @@ func (s *Service) ReminderLeadHours() int {
 //	klaim yatim kalau crash sebelum booking disimpan; dua transaction juga
 //	menambah latency dan kompleksitas reaper untuk klaim basi.
 //
-// LANGKAH 1 — kunci baris mahasiswa.
-// LANGKAH 2 — kunci baris slot.
-// LANGKAH 3 — hitung booking aktif.
-// LANGKAH 4 — simpan booking.
-// LANGKAH 5 — tandai slot booked.
-// LANGKAH 6 — tulis response_body ke idempotency_keys.
+// LANGKAH 1: kunci baris mahasiswa.
+// LANGKAH 2: kunci baris slot.
+// LANGKAH 3: hitung booking aktif.
+// LANGKAH 4: simpan booking.
+// LANGKAH 5: tandai slot booked.
+// LANGKAH 6: tulis response_body ke idempotency_keys.
 //
 // Urutan 1 lalu 2 selalu sama untuk SEMUA pemanggil. Itulah yang mencegah
 // deadlock: deadlock terjadi kalau dua transaksi mengambil dua kunci yang sama
@@ -97,7 +97,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 	}
 	defer tx.Rollback(ctx)
 
-	// LANGKAH 0 — klaim idempotency key.
+	// LANGKAH 0: klaim idempotency key.
 	//
 	// Kalau key kosong, lewati seluruh mekanisme ini.
 	if in.IdempotencyKey != "" {
@@ -123,7 +123,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 			if err != nil {
 				return nil, fmt.Errorf("membaca idempotency key: %w", err)
 			}
-			// endpoint harus sama — key yang sama tidak boleh dipakai di endpoint lain.
+			// endpoint harus sama: key yang sama tidak boleh dipakai di endpoint lain.
 			if storedEndpoint != "/api/v1/bookings" {
 				return nil, ErrIdempotencyReused
 			}
@@ -131,7 +131,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 			if storedHash != in.RequestHash {
 				return nil, ErrIdempotencyReused
 			}
-			// Belum selesai? Sama dengan hash cocok tapi completed_at masih NULL —
+			// Belum selesai? Sama dengan hash cocok tapi completed_at masih NULL;
 			// artinya transaksi sebelumnya sedang berjalan atau rollback.
 			// Karena Postgres menunggu di INSERT ON CONFLICT, baris ini sebenarnya
 			// hanya muncul kalau transaksi sebelumnya sudah commit (kalau belum,
@@ -157,7 +157,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 		// keyAda == true: klaim berhasil, lanjut ke langkah 1.
 	}
 
-	// LANGKAH 1 — kunci baris mahasiswa.
+	// LANGKAH 1: kunci baris mahasiswa.
 	//
 	// Tiga hal dicek sekaligus di sini:
 	//   - baris ada
@@ -170,8 +170,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 	// baris users karena ada foreign key student_id. FOR UPDATE berbenturan
 	// dengan FOR KEY SHARE, jadi memakainya akan memblokir transaksi lain yang
 	// sebenarnya tidak ada urusan dengan mahasiswa ini. FOR NO KEY UPDATE tetap
-	// berbenturan dengan sesama FOR NO KEY UPDATE — yang persis kita butuhkan
-	// untuk menserialkan booking milik mahasiswa yang sama — tanpa mengganggu
+	// berbenturan dengan sesama FOR NO KEY UPDATE: yang persis kita butuhkan
+	// untuk menserialkan booking milik mahasiswa yang sama: tanpa mengganggu
 	// pemeriksaan foreign key milik orang lain.
 	//
 	// ErrStudentNotFound sekarang berarti: token menunjuk user yang sudah
@@ -197,10 +197,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 		return nil, ErrStudentNotFound
 	}
 
-	// LANGKAH 2 — kunci baris slot.
+	// LANGKAH 2: kunci baris slot.
 	//
 	// Tiga hal dicek sekaligus: status, withdrawn, dan jarak tempuh.
-	// Pemeriksaan jarak tempuh pakai now() Postgres, BUKAN time.Now() Go —
+	// Pemeriksaan jarak tempuh pakai now() Postgres, BUKAN time.Now() Go;
 	// sumber jam yang berbeda (app server vs database) bisa menghasilkan
 	// perbedaan hasil saat beban tinggi atau zona waktu tidak sinkron.
 	//
@@ -234,7 +234,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 		return nil, ErrSlotAlreadyBooked
 	}
 
-	// LANGKAH 3 — hitung booking aktif milik mahasiswa ini.
+	// LANGKAH 3: hitung booking aktif milik mahasiswa ini.
 	//
 	// Hanya yang belum lewat yang dihitung: konsultasi minggu lalu tidak boleh
 	// menahan jatah minggu ini.
@@ -255,13 +255,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 		return nil, ErrLimitReached
 	}
 
-	// LANGKAH 4 — simpan booking.
+	// LANGKAH 4: simpan booking.
 	//
 	// Secara logika, sampai di sini slot sudah dikunci dan statusnya sudah
 	// dipastikan 'open', jadi INSERT ini tidak mungkin bentrok. Penanganan
 	// error 23505 di bawah tetap ditulis sebagai JARING PENGAMAN: kalau suatu
-	// hari ada kode lain yang menyimpan booking tanpa melewati langkah 2 —
-	// migrasi data, skrip perbaikan, endpoint baru yang ditulis buru-buru —
+	// hari ada kode lain yang menyimpan booking tanpa melewati langkah 2;
+	// migrasi data, skrip perbaikan, endpoint baru yang ditulis buru-buru;
 	// partial unique index one_active_booking_per_slot yang akan menghentikannya,
 	// dan pengguna tetap menerima 409 yang benar, bukan 500.
 	var b Booking
@@ -286,7 +286,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 		return nil, fmt.Errorf("menyimpan booking: %w", err)
 	}
 
-	// LANGKAH 5 — tandai slotnya terpakai.
+	// LANGKAH 5: tandai slotnya terpakai.
 	//
 	// `AND status = 'open'` sebenarnya sudah dijamin oleh langkah 2. Ditulis
 	// tetap, lalu jumlah baris terdampak diperiksa: kalau suatu saat asumsinya
@@ -304,18 +304,18 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 			in.SlotID, ct.RowsAffected())
 	}
 
-	// LANGKAH 5.5 — jadwalkan reminder email.
+	// LANGKAH 5.5: jadwalkan reminder email.
 	//
 	// Notifikasi disimpan DALAM TRANSAKSI YANG SAMA dengan booking. Ini penting:
 	// tidak ada langkah kedua yang bisa gagal terpisah dari langkah pertama.
 	// Kalau booking berhasil, reminder PASTI ada. Kalau proses crash antara commit
-	// dan worker membaca, tidak ada reminder — tapi booking-nya tetap ada, dan
+	// dan worker membaca, tidak ada reminder: tapi booking-nya tetap ada, dan
 	// student bisa hubungi admin untuk tahu apa yang terjadi.
 	//
 	// scheduled_at = slot_start - reminderLeadHours. Edge case: kalau lead time
 	// terlalu pendek (misal slot dalam 30 menit, lead 1 jam), scheduled_at bisa
 	// sudah lewat saat baris ini di-insert. Worker akan mengambilnya di polling
-	// tick berikutnya dan mengirim "reminder" segera — bukan bug, hanya kasus
+	// tick berikutnya dan mengirim "reminder" segera: bukan bug, hanya kasus
 	// degenerate yang harus ditangani worker.
 	//
 	// Payload sengaja kosong. Worker JOIN ke bookings/slots/users saat mengirim
@@ -332,10 +332,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 		return nil, fmt.Errorf("menyimpan notifikasi reminder: %w", err)
 	}
 
-	// LANGKAH 6 — tulis response_body ke idempotency_keys.
+	// LANGKAH 6: tulis response_body ke idempotency_keys.
 	//
 	// Body yang disimpan di sini adalah yang AKAN dikembalikan ke klien. Saat
-	// replay, body ini dibaca ulang apa adanya — itulah yang menjamin replay
+	// replay, body ini dibaca ulang apa adanya: itulah yang menjamin replay
 	// mengembalikan id booking yang PERTAMA, bukan id terbaru kalau mahasiswa
 	// sempat membatalkan dan memesan lagi.
 	body, err := json.Marshal(map[string]string{"id": b.ID})
@@ -370,7 +370,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 }
 
 // GetByID mengambil satu booking. Kalau requester tidak punya akses (bukan
-// pemilik dan bukan dosen di slot itu), ErrBookingNotFound dikembalikan —
+// pemilik dan bukan dosen di slot itu), ErrBookingNotFound dikembalikan;
 // supaya kita tidak bocorin informasi "ada tapi bukan milikmu" lewat 403.
 //
 // viewRole menentukan field person mana yang diisi: "student" -> lecturer
@@ -481,7 +481,7 @@ func listBookingsView(ctx context.Context, pool *pgxpool.Pool, role, userID, sta
 		argIdx = 2
 		whereClause = "sl.lecturer_id = $1"
 	default:
-		// Role tidak dikenal — kembalikan empty list dengan total 0, BUKAN
+		// Role tidak dikenal: kembalikan empty list dengan total 0, BUKAN
 		// meloloskan whereClause kosong yang akan membaca SELURUH tabel.
 		return nil, 0, nil
 	}
@@ -542,7 +542,7 @@ func listBookingsView(ctx context.Context, pool *pgxpool.Pool, role, userID, sta
 		return nil, 0, fmt.Errorf("membaca hasil booking: %w", err)
 	}
 
-	// Untuk view list, hanya dosen yang butuh field student — dan query kedua
+	// Untuk view list, hanya dosen yang butuh field student: dan query kedua
 	// di sini merugikan kalau pemanggilnya mahasiswa (yang tidak butuh).
 	// Saat ini hemat saja: kalau ada booking dan role adalah lecturer, isi
 	// field student dengan satu query batched.
@@ -621,7 +621,7 @@ func (s *Service) Cancel(ctx context.Context, bookingID, studentID, reason strin
 	defer tx.Rollback(ctx)
 
 	// Langkah 1: baca slot_id dan student_id TANPA lock.
-	// slot_id tidak pernah berubah setelah booking dibuat — aman dibaca lepas.
+	// slot_id tidak pernah berubah setelah booking dibuat: aman dibaca lepas.
 	var slotID string
 	var ownerID string
 	err = tx.QueryRow(ctx, `
@@ -711,7 +711,7 @@ func (s *Service) Cancel(ctx context.Context, bookingID, studentID, reason strin
 
 	// Langkah 6: kembalikan slot ke 'open' kalau tidak ada booking aktif lain.
 	// Guard ini SAMA PERSIS dengan yang dipakai Reconcile untuk perilaku
-	// yang konsisten — booking selesai tidak dianggap occupies slot.
+	// yang konsisten: booking selesai tidak dianggap occupies slot.
 	_, err = tx.Exec(ctx, `
 		UPDATE slots
 		SET status = 'open'
@@ -750,7 +750,7 @@ func (s *Service) Complete(ctx context.Context, bookingID, lecturerID, note stri
 	// Langkah 1: kunci HANYA baris booking dengan FOR UPDATE OF b.
 	// join ke slots diperlukan untuk mengambil lecturer_id dan start_at yang
 	// keduanya immutable, jadi aman dibaca tanpa kunci khusus.
-	// FOR UPDATE OF b membatasi lock ke tabel bookings saja — slot tidak dikunci.
+	// FOR UPDATE OF b membatasi lock ke tabel bookings saja: slot tidak dikunci.
 	var status string
 	var startAt time.Time
 	var slotLecturerID string

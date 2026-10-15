@@ -14,7 +14,7 @@ import (
 )
 
 // dbPalsu memenuhi interface DB. Tidak ada library mocking, tidak ada code
-// generation — cukup struct kecil dengan method yang sama.
+// generation: cukup struct kecil dengan method yang sama.
 type dbPalsu struct{ err error }
 
 func (d dbPalsu) Ping(context.Context) error { return d.err }

@@ -64,7 +64,7 @@ func (s *Server) handleListLecturers(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetLecturer menampilkan detail satu dosen.
-// Endpoint ini PUBLIK — alasan sama dengan handleListLecturers.
+// Endpoint ini PUBLIK: alasan sama dengan handleListLecturers.
 func (s *Server) handleGetLecturer(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	// ID yang bukan UUID pasti tidak cocok dengan baris mana pun. Tanpa cek
@@ -91,7 +91,7 @@ func (s *Server) handleGetLecturer(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetLecturerSlots menampilkan slot yang tersedia untuk satu dosen.
-// Endpoint ini PUBLIK — melihat kalender kosong dosen tidak butuh login.
+// Endpoint ini PUBLIK: melihat kalender kosong dosen tidak butuh login.
 // Yang butuh login baru POST /bookings.
 func (s *Server) handleGetLecturerSlots(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

@@ -47,7 +47,7 @@ export function isSessionActionable(slotStartAt: Date): boolean {
  * Kelompokkan booking confirmed ke tiga bucket untuk dashboard dosen.
  *
  * Pengelompokan berdasarkan waktu saat data diambil (parameter `nowInstant`),
- * BUKAN Date.now() di dalam fungsi — supaya bisa ditest tanpa mock timer.
+ * BUKAN Date.now() di dalam fungsi: supaya bisa ditest tanpa mock timer.
  *
  * Tiga bucket SALING LEPAS (tidak tumpang tindih):
  * - needsFollowUp: confirmed DAN startAt < now (sudah lewat, kapan pun)
@@ -84,11 +84,11 @@ export function groupDashboardBookings(
     }
 
     // Di sini startAt >= now. Cek apakah hari yang sama dengan now (WIB).
-    // Ini operasi kalender — butuh zona Asia/Jakarta.
+    // Ini operasi kalender: butuh zona Asia/Jakarta.
     if (isSameJakartaDay(startAt, nowInstant)) {
       today.push(booking);
     } else {
-      // upcoming — kelompokkan per tanggal WIB
+      // upcoming: kelompokkan per tanggal WIB
       const dateKey = jakartaDateKey(startAt);
       const list = upcomingByDate.get(dateKey);
       if (list) {

@@ -6,7 +6,7 @@
  *
  * Menghasilkan screenshot ke /tmp/sikons-screenshots/ untuk verify:
  * - Tidak ada horizontal scroll
- * - Layout berubah (tabel → kartu di mobile)
+ * - Layout berubah (tabel -> kartu di mobile)
  * - Elemen penting hadir (tombol Batalkan, dll.)
  *
  * Jalankan saat setup awal atau saat ada perubahan CSS besar.

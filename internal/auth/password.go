@@ -11,7 +11,7 @@ import (
 // Cost 12, bukan default bcrypt (10).
 //
 // Angka ini eksponensial: tiap +1 melipatduakan waktu hashing. 12 berarti
-// sekitar 200-300 ms per hash di laptop modern — cukup lambat untuk membuat
+// sekitar 200-300 ms per hash di laptop modern: cukup lambat untuk membuat
 // serangan tebak-menebak massal tidak ekonomis, masih cukup cepat untuk login
 // yang terasa instan. Naikkan seiring hardware makin cepat.
 var bcryptCost = 12
@@ -25,7 +25,7 @@ const minPasswordBytes = 8
 
 // SetBcryptCostUntukTest menurunkan biaya hashing.
 //
-// Cost 12 memakan ~250 ms per hash. Itu memang tujuannya di produksi — membuat
+// Cost 12 memakan ~250 ms per hash. Itu memang tujuannya di produksi: membuat
 // serangan tebak-menebak massal tidak ekonomis. Tapi di test, satu suite yang
 // menghash 40 password jadi memakan 10 detik tanpa membuktikan apa pun
 // tambahan: yang diuji adalah "hash cocok / tidak cocok", bukan "berapa lama".
@@ -34,11 +34,11 @@ const minPasswordBytes = 8
 // memanggilnya di kode produksi tanpa sadar.
 func SetBcryptCostUntukTest(cost int) { bcryptCost = cost }
 
-// hashUmpan dipakai saat email tidak ditemukan — lihat BuangWaktuSetaraVerifikasi.
+// hashUmpan dipakai saat email tidak ditemukan: lihat BuangWaktuSetaraVerifikasi.
 //
 // Dihitung saat runtime, bukan ditulis sebagai konstanta. Hash bcrypt yang
 // diketik manual gampang salah satu karakter, dan kalau formatnya rusak,
-// bcrypt gagal seketika alih-alih membakar waktu — perlindungannya hilang
+// bcrypt gagal seketika alih-alih membakar waktu: perlindungannya hilang
 // tanpa suara. Dihitung sendiri, dia dijamin sah.
 //
 // sync.OnceValue menghitungnya paling banyak sekali, saat pertama dibutuhkan,
@@ -80,7 +80,7 @@ func HashPassword(plain string) (string, error) {
 }
 
 // VerifyPassword mengembalikan nil kalau cocok, ErrInvalidCredentials kalau
-// tidak. Perhatikan: yang dikembalikan BUKAN "password salah" — pesannya
+// tidak. Perhatikan: yang dikembalikan BUKAN "password salah": pesannya
 // digabung dengan "email tidak ditemukan" secara sengaja, supaya penyerang
 // tidak bisa memakai halaman login untuk mendata email mana yang terdaftar.
 func VerifyPassword(hash, plain string) error {
@@ -97,7 +97,7 @@ func VerifyPassword(hash, plain string) error {
 // BuangWaktuSetaraVerifikasi dipanggil saat email TIDAK ditemukan.
 //
 // Tanpa ini, login dengan email yang tidak terdaftar akan membalas jauh lebih
-// cepat daripada login dengan email terdaftar tapi password salah — karena
+// cepat daripada login dengan email terdaftar tapi password salah: karena
 // yang pertama tidak pernah menjalankan bcrypt. Selisih ratusan milidetik itu
 // cukup untuk dipakai mendata email mana yang punya akun. Pesan errornya sudah
 // disamakan; waktunya juga harus.

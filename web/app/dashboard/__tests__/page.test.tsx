@@ -120,7 +120,7 @@ function renderDashboard() {
   );
 }
 
-describe("/dashboard — tandai selesai", () => {
+describe("/dashboard: tandai selesai", () => {
   it("mengirim catatan, menutup dialog, dan booking hilang dari daftar", async () => {
     const rekaman = setupHandlers();
     const user = userEvent.setup();
@@ -159,7 +159,7 @@ describe("/dashboard — tandai selesai", () => {
   });
 });
 
-describe("/dashboard — tidak hadir", () => {
+describe("/dashboard: tidak hadir", () => {
   it("penolakan dari backend tampil di dialog", async () => {
     setupHandlers();
     const user = userEvent.setup();

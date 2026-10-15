@@ -1,6 +1,6 @@
 # Perintah-perintah yang sering dipakai. Ditulis di Makefile supaya tidak ada
 # perintah panjang yang cuma hidup di riwayat terminal dan hilang saat ganti
-# laptop — dan supaya CI nanti menjalankan perintah yang PERSIS SAMA dengan
+# laptop, dan supaya CI nanti menjalankan perintah yang PERSIS SAMA dengan
 # yang kamu jalankan di lokal.
 
 # Tanda minus di depan: kalau .env belum ada, make tetap jalan (dan target
@@ -33,7 +33,7 @@ psql: ## Masuk ke psql
 
 # golang-migrate dijalankan sebagai service compose (lihat docker-compose.yml),
 # supaya kamu tidak perlu memasang CLI tambahan DAN supaya container-nya bisa
-# memanggil Postgres lewat jaringan internal compose — bukan lewat localhost,
+# memanggil Postgres lewat jaringan internal compose, bukan lewat localhost,
 # yang di macOS menunjuk ke VM Docker, bukan ke laptopmu.
 migrate-up: ## Jalankan semua migrasi
 	docker compose run --rm migrate up
@@ -61,7 +61,7 @@ generate-slots: ## Generate slot untuk semua dosen aktif berdasarkan aturan kete
 	go run ./cmd/generate-slots
 
 # Database uji TERPISAH dari database development. Test membersihkan tabel
-# dengan TRUNCATE di awal tiap test — kalau diarahkan ke database dev, data
+# dengan TRUNCATE di awal tiap test, kalau diarahkan ke database dev, data
 # percobaanmu ikut hilang setiap kali test jalan.
 test-db: ## Siapkan database uji (sekali saja, atau setelah `make reset`)
 	-docker compose exec -T postgres psql -U sikons -d postgres -c "CREATE DATABASE sikons_test"
@@ -72,7 +72,7 @@ test-db: ## Siapkan database uji (sekali saja, atau setelah `make reset`)
 test: ## Semua test (integrasi ikut jalan kalau TEST_DATABASE_URL diisi)
 	go test ./... -race -count=1
 
-test-unit: ## Test unit saja — cepat, tidak butuh Docker
+test-unit: ## Test unit saja, cepat, tidak butuh Docker
 	TEST_DATABASE_URL= go test ./... -race -count=1
 
 test-concurrency: ## Hanya test perebutan slot, dengan output verbose
@@ -93,9 +93,9 @@ vet: ## Analisis statis bawaan Go
 	go vet ./...
 
 # Test E2E Playwright end-to-end. Asumsi Postgres sudah nyala lewat
-# `docker compose up -d` — Makefile ini tidak menyalakan container. Urutan:
+# `docker compose up -d`. Makefile ini tidak menyalakan container. Urutan:
 # 1) migrate, seed, generate-slots: pakai target yang sudah ada, idempoten.
-# 2) build binary api ke ./bin/api (bukan `go run` — start lebih cepat dan
+# 2) build binary api ke ./bin/api (bukan `go run`, start lebih cepat dan
 #    tidak mengunci source tree).
 # 3) `next build` di web/: next start butuh output ini.
 # 4) jalankan Playwright. webServer di config (API + next start) diwarisi

@@ -20,7 +20,7 @@ import (
 // baris Postgres dengan FOR UPDATE SKIP LOCKED. Database palsu tidak akan
 // membuktikan apa pun tentang race condition.
 //
-// Tidak ada TRUNCATE di file ini, dan itu disengaja — pola yang sama dengan
+// Tidak ada TRUNCATE di file ini, dan itu disengaja: pola yang sama dengan
 // internal/booking/service_test.go. Package lain (booking, server, dll) memakai
 // database uji yang sama dan insert notification asli lewat transaction booking.
 // Kalau kita TRUNCATE sebelum test, kita akan menghapus data mereka.
@@ -33,7 +33,7 @@ import (
 // di database bersama.
 //
 // Jalankan dengan:  TEST_DATABASE_URL=... go test ./internal/reminder/...
-// Kalau TEST_DATABASE_URL kosong, seluruh file ini dilewati — supaya
+// Kalau TEST_DATABASE_URL kosong, seluruh file ini dilewati: supaya
 // `go test ./...` biasa tetap cepat dan tidak menuntut Docker hidup.
 
 var poolUji *pgxpool.Pool
@@ -41,7 +41,7 @@ var poolUji *pgxpool.Pool
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		fmt.Println("TEST_DATABASE_URL kosong — test reminder dilewati")
+		fmt.Println("TEST_DATABASE_URL kosong: test reminder dilewati")
 		os.Exit(0)
 	}
 
@@ -216,7 +216,7 @@ func TestReminderSent_Success(t *testing.T) {
 		t.Errorf("sender call count = %d, want 1", fake.CallCount())
 	}
 
-	// Verifikasi status di database — disaring ke notifID ini.
+	// Verifikasi status di database: disaring ke notifID ini.
 	var status string
 	var sentAt *time.Time
 	err = poolUji.QueryRow(context.Background(), `
@@ -260,7 +260,7 @@ func TestReminderSkipped_NotConfirmed(t *testing.T) {
 		t.Errorf("sender call count = %d, want 0 (booking cancelled)", fake.CallCount())
 	}
 
-	// Verifikasi status di database — disaring ke notifID ini.
+	// Verifikasi status di database: disaring ke notifID ini.
 	var status string
 	err = poolUji.QueryRow(context.Background(), `
 		SELECT status::text FROM notifications WHERE id = $1::uuid`, notifID,
@@ -335,14 +335,14 @@ func TestReminderFailed_AfterMaxAttempts(t *testing.T) {
 // DESAIN TEST:
 //  1. Buat SATU notification pending yang due.
 //  2. Blok FakeSender SEBELUM goroutine A jalan.
-//     A akan berhenti di tengah Send() sementara transaksinya masih terbuka —
+//     A akan berhenti di tengah Send() sementara transaksinya masih terbuka;
 //     baris terkunci FOR UPDATE SKIP LOCKED.
 //  3. Saat A sudah ngeblock di Send(), jalankan goroutine B.
 //     B harus melihat baris terkunci dan skip (processed == 0), bukan tunggu.
 //  4. Unblock A, tunggu selesai, assert CallCount == 1.
 //
-// Catatan: test ini memakai processNotification(ctx, notifID) — bukan
-// processBatch — supaya query kedua goroutine hanya melihat baris notifID
+// Catatan: test ini memakai processNotification(ctx, notifID): bukan
+// processBatch: supaya query kedua goroutine hanya melihat baris notifID
 // ini (idempotent). Kalau pakai processBatch, setiap goroutine akan scan
 // semua pending dan ikut memproses baris dari test lain di database bersama.
 //
@@ -403,12 +403,12 @@ func TestReminderConcurrencyVerify_SKIP_LOCKED(t *testing.T) {
 		time.Sleep(1 * time.Millisecond)
 	}
 	if fake.SemaphoreCount() < 1 {
-		t.Fatal("goroutine A tidak pernah sampai ke Send() — polling timeout")
+		t.Fatal("goroutine A tidak pernah sampai ke Send(): polling timeout")
 	}
 
 	// Sekarang goroutine B: dia harus melihat baris terkunci dan SKIP.
 	// processNotification dengan ID yang sama, FOR UPDATE SKIP LOCKED, akan
-	// melihat baris dipegang A dan tidak memilihnya → return 0.
+	// melihat baris dipegang A dan tidak memilihnya -> return 0.
 	go func() {
 		processed, err := svc.processNotification(ctx, notifID)
 		resultB <- result{processed, err}

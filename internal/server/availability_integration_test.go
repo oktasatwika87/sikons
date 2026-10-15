@@ -524,7 +524,7 @@ func TestAvailabilityRule_AturanBaruLangsungBikinSlot(t *testing.T) {
 		t.Fatalf("create rule: %s", rec.Body.String())
 	}
 
-	// Decode response — periksa error Unmarshal
+	// Decode response: periksa error Unmarshal
 	var hasil struct {
 		ID    string `json:"id"`
 		Slots struct {

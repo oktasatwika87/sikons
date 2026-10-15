@@ -20,7 +20,7 @@ import (
 
 var poolUji *pgxpool.Pool
 var cfgUji config.Config
-var skipIfNoDB bool // true saat TEST_DATABASE_URL kosong — semua test DB diskip
+var skipIfNoDB bool // true saat TEST_DATABASE_URL kosong: semua test DB diskip
 
 // testLogger implements *slog.Logger untuk test.
 var logUji = newTestLogger()
@@ -43,7 +43,7 @@ func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		skipIfNoDB = true
-		fmt.Println("TEST_DATABASE_URL kosong — test integrasi server dilewati")
+		fmt.Println("TEST_DATABASE_URL kosong: test integrasi server dilewati")
 		os.Exit(0)
 	}
 

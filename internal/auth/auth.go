@@ -26,7 +26,7 @@ var (
 	ErrSecretTooShort      = errors.New("JWT_SECRET minimal 32 karakter")
 	ErrRefreshTokenInvalid = errors.New("refresh token tidak valid")
 	ErrRefreshTokenExpired = errors.New("refresh token kedaluwarsa")
-	ErrRefreshTokenReused  = errors.New("refresh token sudah dipakai — kemungkinan dicuri")
+	ErrRefreshTokenReused  = errors.New("refresh token sudah dipakai: kemungkinan dicuri")
 	ErrRefreshInProgress   = errors.New("refresh token sedang diproses")
 )
 
@@ -39,11 +39,11 @@ var RefreshGracePeriod = 30 * time.Second
 // RefreshSuccessorMinAge adalah umur minimum pengganti token agar dianggap
 // "kemungkinan balasan hilang" (kasus halaman di-reload, server commit tapi
 // cookie baru tidak sampai ke browser). Di bawah umur ini, request yang
-// mengirim ulang token lama tetap dianggap balapan wajar → 409.
+// mengirim ulang token lama tetap dianggap balapan wajar -> 409.
 //
 // Alasan 2 detik: request dari tab lain datang dalam hitungan milidetik
 // (jauh di bawah 1 detik), sedangkan balasan yang hilang baru dikirim
-// ulang di page load berikutnya — yaitu setelah halaman selesai di-render
+// ulang di page load berikutnya: yaitu setelah halaman selesai di-render
 // dan JavaScript AuthContext berjalan, yang memakan waktu ratusan
 // milidetik sampai beberapa detik pada jaringan lambat. Batas 2 detik
 // cukup lebar untuk tab paralel, cukup ketat untuk "balasan hilang".
@@ -71,7 +71,7 @@ func ResetSuccessorMinAgeMengambang() {
 }
 
 // Identity adalah siapa si pemanggil, hasil pembacaan token.
-// Sengaja hanya berisi dua hal — apa pun selain ini harus diambil dari
+// Sengaja hanya berisi dua hal: apa pun selain ini harus diambil dari
 // database, karena isi token tidak bisa dipercaya untuk data yang berubah.
 type Identity struct {
 	UserID string

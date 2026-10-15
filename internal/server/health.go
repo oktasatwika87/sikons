@@ -13,7 +13,7 @@ import (
 // Sengaja TIDAK menyentuh database. Ini yang disebut liveness probe: kalau
 // endpoint ini gagal, artinya prosesnya sendiri rusak dan harus di-restart.
 // Kalau ikut mengecek database, database yang sedang lambat akan membuat
-// orchestrator me-restart aplikasi yang sebenarnya sehat — restart yang tidak
+// orchestrator me-restart aplikasi yang sebenarnya sehat: restart yang tidak
 // memperbaiki apa pun, hanya menambah downtime.
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok"})

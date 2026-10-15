@@ -32,7 +32,7 @@ type updateRuleRequest struct {
 }
 
 // reconcileSlot memanggil Reconcile untuk dosen terkait.
-// Jika gagal, cukup log error — request utama tetap berhasil.
+// Jika gagal, cukup log error: request utama tetap berhasil.
 // Mengembalikan Summary kosong jika gagal.
 func (s *Server) reconcileSlot(ctx context.Context, lecturerID string) slotgen.Summary {
 	if s.slotgen == nil {

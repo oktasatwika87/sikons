@@ -1,7 +1,7 @@
 /**
  * Test Zod schemas untuk validasi form ketersediaan.
  *
- * Validasi HARUS sinkron dengan validator Go — test ini memastikan
+ * Validasi HARUS sinkron dengan validator Go: test ini memastikan
  * tidak ada drift antara frontend dan backend.
  */
 import { describe, expect, it } from "vitest";
@@ -150,8 +150,8 @@ describe("createRuleSchema", () => {
 
   // Boundary: jendela >= slot_duration_min
   it("rejects jendela smaller than slot_duration_min", () => {
-    // 3 jam = 180 menit, tapi durasi 60 menit → 3 slot, OK
-    // Tapi 1 jam = 60 menit, durasi 30 menit → 2 slot, OK
+    // 3 jam = 180 menit, tapi durasi 60 menit -> 3 slot, OK
+    // Tapi 1 jam = 60 menit, durasi 30 menit -> 2 slot, OK
     // Kasus gagal: 1 jam = 60 menit, durasi 90 menit
     const result = createRuleSchema.safeParse({
       day_of_week: 1,

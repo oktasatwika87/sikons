@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { LecturerList } from "@/components/lecturer/LecturerList";
 
 /**
- * /dosen — daftar dosen dengan filter + pagination.
+ * /dosen: daftar dosen dengan filter + pagination.
  *
  * Suspense membungkus LecturerList karena useSearchParams men-dynamic-kan
  * halaman ini di App Router (lihat pola /login yang sudah ada).

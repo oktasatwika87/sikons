@@ -10,7 +10,7 @@ import (
 func TestAPITanpaJWTSecret_Ditolak(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL kosong — test dilewati")
+		t.Skip("TEST_DATABASE_URL kosong, test dilewati")
 	}
 
 	orig := map[string]string{

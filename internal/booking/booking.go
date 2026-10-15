@@ -1,7 +1,7 @@
 // Package booking berisi logika pemesanan slot konsultasi.
 //
 // Di sinilah inti project ini berada: mencegah dua mahasiswa memesan slot yang
-// sama. Seluruh keputusan di package ini berputar di sekitar satu pertanyaan —
+// sama. Seluruh keputusan di package ini berputar di sekitar satu pertanyaan:
 // apa yang terjadi kalau dua request tiba pada milidetik yang sama.
 package booking
 
@@ -59,7 +59,7 @@ type Booking struct {
 }
 
 // BookingView adalah join lengkap dari bookings + slots + users + lecturer_profiles.
-// Service mengembalikannya agar HTTP handler tidak perlu query sendiri — dengan
+// Service mengembalikannya agar HTTP handler tidak perlu query sendiri: dengan
 // begitu package server tidak perlu tahu SQL apa pun.
 type BookingView struct {
 	ID          string    `json:"id"`
@@ -73,7 +73,7 @@ type BookingView struct {
 	SlotStart   time.Time `json:"slot_start_at"`
 	SlotEnd     time.Time `json:"slot_end_at"`
 
-	// Person — hanya salah satu yang terisi, tergantung peran pemanggil.
+	// Person: hanya salah satu yang terisi, tergantung peran pemanggil.
 	LecturerFullName   string
 	LecturerDepartment string
 	StudentFullName    string
@@ -81,8 +81,8 @@ type BookingView struct {
 	LecturerNote       string
 }
 
-// CreateResult adalah keluaran service.Create. Body berisi JSON yang SUDAH jadi
-// — siap ditulis ke ResponseWriter. Replay = true bila body berasal dari
+// CreateResult adalah keluaran service.Create. Body berisi JSON yang SUDAH jadi,
+// siap ditulis ke ResponseWriter. Replay = true bila body berasal dari
 // idempotency_keys, false bila baru saja di-generate.
 type CreateResult struct {
 	Booking *Booking

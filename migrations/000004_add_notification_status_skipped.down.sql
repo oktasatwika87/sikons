@@ -1,10 +1,10 @@
 -- =============================================================================
--- M4b — reminder email H-1 (down)
+-- M4b, reminder email H-1 (down)
 --
 -- MENAMBAH nilai enum di Postgres TIDAK reversible secara langsung.
 --
 -- Postgres tidak menyediakan sintaks untuk menghapus satu nilai dari enum.
--- Satu-satunya cara adalah recreate entire type — operasi yang berat dan
+-- Satu-satunya cara adalah recreate entire type, operasi yang berat dan
 -- berpotensi memblokir tabel besar.
 --
 -- Untuk fitur reminder yang nilai 'skipped'-nya hanya penanda administratif

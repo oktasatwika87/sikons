@@ -22,13 +22,13 @@ const DAY_NAMES: Record<number, string> = {
 };
 
 function formatTimeRange(rule: AvailabilityRule): string {
-  return `${rule.start_time}–${rule.end_time}`;
+  return `${rule.start_time}-${rule.end_time}`;
 }
 
 function formatEffectiveDate(effectiveFrom: string, effectiveTo?: string): string {
   const from = formatDate(effectiveFrom);
   if (!effectiveTo) return `dari ${from}`;
-  return `${from} – ${formatDate(effectiveTo)}`;
+  return `${from} - ${formatDate(effectiveTo)}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -220,10 +220,10 @@ function ConfirmRuleDialog({
       title={isEnd ? "Akhiri Aturan?" : "Hapus Aturan?"}
       description={
         isEnd
-          ? `Aksi ini akan mengakhiri jadwal ${DAY_NAMES[rule.day_of_week]} ${rule.start_time}–${rule.end_time} mulai hari ini (${formatDate(today)}). ` +
+          ? `Aksi ini akan mengakhiri jadwal ${DAY_NAMES[rule.day_of_week]} ${rule.start_time}-${rule.end_time} mulai hari ini (${formatDate(today)}). ` +
             `Slot yang sudah dibuat dari aturan ini akan diproses ulang. ` +
             `Tindakan ini bisa membatalkan booking yang sudah ada.`
-          : `Hapus jadwal ${DAY_NAMES[rule.day_of_week]} ${rule.start_time}–${rule.end_time}? ` +
+          : `Hapus jadwal ${DAY_NAMES[rule.day_of_week]} ${rule.start_time}-${rule.end_time}? ` +
             `Slot yang dibuat dari aturan ini akan diproses ulang. ` +
             `Tindakan ini bisa membatalkan booking yang sudah ada.`
       }

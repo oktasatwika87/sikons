@@ -60,7 +60,7 @@ export function RegisterForm() {
         method: "POST",
         body,
       });
-      // Register TIDAK auto-login — redirect ke /login.
+      // Register TIDAK auto-login: redirect ke /login.
       router.push("/login?registered=1");
     } catch (err) {
       if (err instanceof ApiError) {

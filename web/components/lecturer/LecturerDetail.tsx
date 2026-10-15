@@ -27,17 +27,17 @@ import {
 } from "@/lib/date";
 
 /**
- * Halaman detail dosen — info + kalender slot mingguan read-only.
+ * Halaman detail dosen: info + kalender slot mingguan read-only.
  *
  * Kalender:
- *  - Default minggu berjalan (Senin–Minggu Asia/Jakarta).
+ *  - Default minggu berjalan (Senin-Minggu Asia/Jakarta).
  *  - Tombol "Sebelumnya" dinonaktifkan kalau minggu sebelumnya seluruhnya
  *    sudah lewat (lihat isBeforeThisWeekJakarta), artinya mati di minggu
  *    berjalan.
  *  - Klik slot open membuka BookingDialog.
  *  - SLOT_ALREADY_BOOKED error ditangani dengan banner yang muncul setelah dialog tertutup.
  *
- * Format waktu SELALU lewat lib/date — tidak ada Date.toLocaleString
+ * Format waktu SELALU lewat lib/date: tidak ada Date.toLocaleString
  * polos di sini.
  */
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -53,7 +53,7 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
     queryFn: () => fetchWithRetry<Lecturer>(`/lecturers/${lecturerId}`),
   });
 
-  // Hitung from/to dari weekAnchor lewat helper — konsisten dengan label
+  // Hitung from/to dari weekAnchor lewat helper: konsisten dengan label
   // minggu dan header kolom kalender.
   const { from: weekFrom, to: weekTo } = weekRangeJakarta(weekAnchor);
 
@@ -270,7 +270,7 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
                                     : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 cursor-pointer")
                                 }
                               >
-                                {formatJakartaTime(slot.start_at)}–
+                                {formatJakartaTime(slot.start_at)}-
                                 {formatJakartaTime(slot.end_at)}
                               </button>
                             );
@@ -327,7 +327,7 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
                                     : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 cursor-pointer")
                                 }
                               >
-                                {formatJakartaTime(slot.start_at)}–{formatJakartaTime(slot.end_at)}
+                                {formatJakartaTime(slot.start_at)}-{formatJakartaTime(slot.end_at)}
                               </button>
                             );
                           })}

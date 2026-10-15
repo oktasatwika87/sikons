@@ -22,7 +22,7 @@ func TestHashPassword_HasilnyaBerbedaTiapKali(t *testing.T) {
 	// salt acak di setiap hash. Ini yang membuat rainbow table tidak berguna:
 	// penyerang tidak bisa menghitung sekali lalu memakainya untuk semua orang.
 	if h1 == h2 {
-		t.Fatal("dua hash dari password yang sama ternyata identik — salt-nya tidak bekerja")
+		t.Fatal("dua hash dari password yang sama ternyata identik: salt-nya tidak bekerja")
 	}
 
 	// Dan keduanya tetap cocok dengan password aslinya, karena salt-nya ikut

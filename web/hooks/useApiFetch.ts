@@ -10,10 +10,10 @@ import { ApiError } from "@/lib/api/errors";
  * Perilaku:
  * 1. Kirim request dengan accessToken dari AuthContext.
  * 2. Kalau 401:
- *    a. Refresh token (single-flight — banyak 401 bersamaan cuma satu refresh).
+ *    a. Refresh token (single-flight: banyak 401 bersamaan cuma satu refresh).
  *    b. Retry request dengan token baru.
- *    c. Kalau masih 401 → logout + throw.
- * 3. 409 REFRESH_IN_PROGRESS saat refresh → retry refresh setelah 500ms.
+ *    c. Kalau masih 401 -> logout + throw.
+ * 3. 409 REFRESH_IN_PROGRESS saat refresh -> retry refresh setelah 500ms.
  * 4. Error lain dilempar seperti biasa.
  */
 export function useApiFetch() {
@@ -25,7 +25,7 @@ export function useApiFetch() {
    *
    * fetchWithRetry di-memoize via useCallback, jadi closure `auth` adalah
    * snapshot saat dia dibuat. Setelah refreshTokens() succeed dan AuthContext
-   * setAuth(...), useEffect ini menyalin nilai baru ke ref — retry berikutnya
+   * setAuth(...), useEffect ini menyalin nilai baru ke ref: retry berikutnya
    * di doFetch() pun membaca token yang benar.
    *
    * Trade-off: kalau React belum sempat commit re-render + useEffect sebelum
@@ -86,16 +86,16 @@ export function useApiFetch() {
 
       let response = await doFetch();
 
-      // 401 → refresh + retry sekali
+      // 401 -> refresh + retry sekali
       if (response.status === 401) {
         // Single-flight: kalau ada refresh yang sedang berjalan, tunggu itu.
-        // refreshTokens() mengembalikan { ok } — bukan void — supaya kita
+        // refreshTokens() mengembalikan { ok }: bukan void: supaya kita
         // tidak perlu membaca auth.status lewat closure (yang stale) untuk
         // memutuskan langkah berikutnya.
         let promise = refreshInFlight.current;
         if (!promise) {
           promise = refreshTokens();
-          // Simpan promise dengan cleanup di finally — saat resolved, barrier
+          // Simpan promise dengan cleanup di finally: saat resolved, barrier
           // dibuka untuk request berikutnya.
           refreshInFlight.current = promise.finally(() => {
             refreshInFlight.current = null;
@@ -103,14 +103,14 @@ export function useApiFetch() {
         }
         const result = await promise;
 
-        // Refresh gagal → status AuthContext sudah anonymous.
+        // Refresh gagal -> status AuthContext sudah anonymous.
         if (!result.ok) {
           throw new ApiError("UNAUTHENTICATED", "Sesi habis, silakan login ulang", undefined);
         }
 
         response = await doFetch();
 
-        // Tetap 401 setelah refresh → gagal final
+        // Tetap 401 setelah refresh -> gagal final
         if (response.status === 401) {
           throw new ApiError("UNAUTHENTICATED", "Sesi habis, silakan login ulang", undefined);
         }

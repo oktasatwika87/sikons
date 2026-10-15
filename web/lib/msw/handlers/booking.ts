@@ -47,7 +47,7 @@ export function setBookings(bookings: Array<{ id: string; [key: string]: unknown
 }
 
 // Hapus lecturer_note dari respons jika pemanggil bukan dosen. Catatan dosen
-// privat — sama seperti kontrak backend, frontend tidak boleh mendapat field
+// privat: sama seperti kontrak backend, frontend tidak boleh mendapat field
 // ini untuk sesi mahasiswa/admin.
 function tanpaLecturerNoteUntukNonDosen<T extends Record<string, unknown>>(b: T): T {
   if (currentRole === "lecturer") return b;
@@ -56,7 +56,7 @@ function tanpaLecturerNoteUntukNonDosen<T extends Record<string, unknown>>(b: T)
 }
 
 export const bookingHandlers = [
-  // POST /api/v1/bookings — create booking
+  // POST /api/v1/bookings: create booking
   http.post(`${BASE_URL}/bookings`, async ({ request }) => {
     const body = (await request.json()) as { slot_id: string; topic: string; description?: string };
     const idempotencyKey = request.headers.get("Idempotency-Key");
@@ -111,7 +111,7 @@ export const bookingHandlers = [
     return HttpResponse.json({ id }, { status: 201 });
   }),
 
-  // GET /api/v1/bookings — list bookings
+  // GET /api/v1/bookings: list bookings
   http.get(`${BASE_URL}/bookings`, ({ request }) => {
     const url = new URL(request.url);
     const status = url.searchParams.get("status");
@@ -149,7 +149,7 @@ export const bookingHandlers = [
     });
   }),
 
-  // GET /api/v1/bookings/:id — get single booking
+  // GET /api/v1/bookings/:id: get single booking
   http.get(`${BASE_URL}/bookings/:id`, ({ params }) => {
     const id = params.id as string;
     const booking = store.bookings.get(id);
@@ -162,7 +162,7 @@ export const bookingHandlers = [
     return HttpResponse.json(tanpaLecturerNoteUntukNonDosen(booking as Record<string, unknown>));
   }),
 
-  // PATCH /api/v1/bookings/:id/cancel — cancel booking
+  // PATCH /api/v1/bookings/:id/cancel: cancel booking
   http.patch(`${BASE_URL}/bookings/:id/cancel`, async ({ params, request }) => {
     const id = params.id as string;
     const booking = store.bookings.get(id) as { status: string; [key: string]: unknown } | undefined;
@@ -200,7 +200,7 @@ export const bookingHandlers = [
     return HttpResponse.json(cancelledBooking);
   }),
 
-  // PATCH /api/v1/bookings/:id/complete — tandai selesai
+  // PATCH /api/v1/bookings/:id/complete: tandai selesai
   http.patch(`${BASE_URL}/bookings/:id/complete`, async ({ params, request }) => {
     const id = params.id as string;
     const booking = store.bookings.get(id) as { status: string; slot?: { start_at: string }; [key: string]: unknown } | undefined;
@@ -239,7 +239,7 @@ export const bookingHandlers = [
     return HttpResponse.json(completedBooking);
   }),
 
-  // PATCH /api/v1/bookings/:id/no-show — tandai tidak hadir
+  // PATCH /api/v1/bookings/:id/no-show: tandai tidak hadir
   http.patch(`${BASE_URL}/bookings/:id/no-show`, async ({ params }) => {
     const id = params.id as string;
     const booking = store.bookings.get(id) as { status: string; [key: string]: unknown } | undefined;

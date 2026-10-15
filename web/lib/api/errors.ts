@@ -4,7 +4,7 @@
  * Format error backend:
  * { "error": { "code": "SLOT_ALREADY_BOOKED", "message": "...", "details": {} } }
  *
- * `code` adalah kontrak untuk mesin — frontend mencabangkan logika di sini.
+ * `code` adalah kontrak untuk mesin: frontend mencabangkan logika di sini.
  */
 export class ApiError extends Error {
   constructor(

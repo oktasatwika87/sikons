@@ -53,7 +53,7 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 }
 
 // requireRole dipasang SETELAH requireAuth. Dia mengembalikan middleware,
-// bukan menjadi middleware — itu supaya bisa dipanggil dengan argumen:
+// bukan menjadi middleware: itu supaya bisa dipanggil dengan argumen:
 //
 //	r.Use(s.requireRole(auth.RoleLecturer, auth.RoleAdmin))
 //
@@ -64,7 +64,7 @@ func (s *Server) requireRole(peran ...string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			id, ok := auth.IdentityFrom(r.Context())
 			if !ok {
-				// Kalau ini terjadi, urutan middleware-nya salah pasang —
+				// Kalau ini terjadi, urutan middleware-nya salah pasang;
 				// requireRole dipakai tanpa requireAuth di depannya. Itu bug
 				// programmer, bukan kesalahan pengguna.
 				s.log.Error("requireRole dipasang tanpa requireAuth",
@@ -81,7 +81,7 @@ func (s *Server) requireRole(peran ...string) func(http.Handler) http.Handler {
 			}
 
 			// 403, bukan 404: pemanggilnya sudah terbukti siapa, cuma tidak
-			// berhak. 401 juga salah — itu artinya "saya tidak tahu kamu siapa".
+			// berhak. 401 juga salah: itu artinya "saya tidak tahu kamu siapa".
 			httpx.Error(w, http.StatusForbidden, httpx.CodeForbidden,
 				"Peran akun ini tidak diizinkan mengakses endpoint tersebut", nil)
 		})

@@ -28,7 +28,7 @@ import (
 )
 
 // Test di file ini butuh Postgres sungguhan. Kalau TEST_DATABASE_URL kosong,
-// masing-masing test memanggil t.Skip — BUKAN os.Exit di TestMain, karena file
+// masing-masing test memanggil t.Skip: BUKAN os.Exit di TestMain, karena file
 // tetangga di package ini berisi test yang tidak butuh database sama sekali
 // dan harus tetap jalan.
 var (
@@ -41,7 +41,7 @@ func dbUji(t *testing.T) *pgxpool.Pool {
 
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL kosong — test integrasi dilewati")
+		t.Skip("TEST_DATABASE_URL kosong: test integrasi dilewati")
 	}
 
 	sekali.Do(func() {
@@ -80,7 +80,7 @@ func emailUnik(nama string) string {
 }
 
 // serverLengkap merakit server dengan auth.Service sungguhan di atas database
-// uji — persis seperti yang dirakit main.go, supaya yang diuji memang jalur
+// uji: persis seperti yang dirakit main.go, supaya yang diuji memang jalur
 // yang benar-benar dipakai di produksi.
 func serverLengkap(t *testing.T) http.Handler {
 	t.Helper()
@@ -304,7 +304,7 @@ func TestRegister_TidakBisaMenyetelRoleSendiri(t *testing.T) {
 	}, "")
 
 	if rec.Code == http.StatusCreated {
-		t.Fatal("field role diterima saat register — akun bisa naik pangkat sendiri")
+		t.Fatal("field role diterima saat register: akun bisa naik pangkat sendiri")
 	}
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, mau 400", rec.Code)
@@ -375,7 +375,7 @@ func TestLogin_GagalTidakMembocorkanApakahEmailTerdaftar(t *testing.T) {
 		t.Fatalf("status = %d dan %d, dua-duanya mau 401", a.Code, b.Code)
 	}
 	if a.Body.String() != b.Body.String() {
-		t.Errorf("response berbeda — membocorkan email mana yang terdaftar:\n  terdaftar: %s\n  tidak ada: %s",
+		t.Errorf("response berbeda: membocorkan email mana yang terdaftar:\n  terdaftar: %s\n  tidak ada: %s",
 			a.Body.String(), b.Body.String())
 	}
 }
@@ -479,7 +479,7 @@ func TestRefresh_ReuseTokenMenCulutSeluruhFamily(t *testing.T) {
 		t.Fatal("no new cookie")
 	}
 
-	// Refresh KEDUA dengan token lama — penerus (cookieBaru) masih aktif dan dalam
+	// Refresh KEDUA dengan token lama: penerus (cookieBaru) masih aktif dan dalam
 	// grace period, jadi dianggap race wajar -> 409 REFRESH_IN_PROGRESS.
 	// Family TIDAK di-revoke.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{loginCookie})
@@ -498,13 +498,13 @@ func TestRefresh_ReuseTokenMenCulutSeluruhFamily(t *testing.T) {
 		t.Errorf("code = %s, mau REFRESH_IN_PROGRESS", errResp.Error.Code)
 	}
 
-	// Token BARU (penerus) masih berlaku — family tidak dicabut karena dianggap race wajar.
+	// Token BARU (penerus) masih berlaku: family tidak dicabut karena dianggap race wajar.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{cookieBaru})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("token baru setelah race terdeteksi: %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	// Verifikasi family_id berbeda dari user lain — User 2 login dan refresh
+	// Verifikasi family_id berbeda dari user lain: User 2 login dan refresh
 	email2 := emailUnik("reusefamily2")
 	rec = kirim(t, h, http.MethodPost, "/api/v1/auth/register", map[string]string{
 		"email": email2, "password": "password-yang-cukup-panjang", "full_name": "Test2",
@@ -569,7 +569,7 @@ func TestRefresh_TokenKedaluwarsaDitolak(t *testing.T) {
 		WHERE user_id = (SELECT id FROM users WHERE email = $1)
 		  AND revoked_at IS NULL`, email)
 
-	// Coba refresh — harus gagal karena expired
+	// Coba refresh: harus gagal karena expired
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{loginCookie})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("token expired: status = %d, mau 401, body=%s", rec.Code, rec.Body.String())
@@ -790,7 +790,7 @@ func TestRefresh_PencurianSetelahGraceHabis(t *testing.T) {
 		t.Fatalf("refresh pertama: %s", rec.Body.String())
 	}
 
-	// Sekarang pakai token lama — revoked_at-nya ada, grace=-1s, jadi langsung dianggap pencurian
+	// Sekarang pakai token lama: revoked_at-nya ada, grace=-1s, jadi langsung dianggap pencurian
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{refreshCookie})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("reuse setelah grace habis: status=%d, mau 401, body=%s", rec.Code, rec.Body.String())
@@ -814,9 +814,9 @@ func TestRefresh_PencurianSetelahGraceHabis(t *testing.T) {
 }
 
 // TestRefresh_PenerusSudahDicabut_DalamGrace_409 memverifikasi bahwa token lama
-// yang penerusnya sudah dicabut DAN masih dalam grace → 409 (cabang 2b),
+// yang penerusnya sudah dicabut DAN masih dalam grace -> 409 (cabang 2b),
 // BUKAN pencurian langsung. Sebelum perubahan, kasus ini dianggap pencurian
-// (401) dan keluarga langsung dicabut — itu membuat korban kehilangan
+// (401) dan keluarga langsung dicabut: itu membuat korban kehilangan
 // token aktifnya Z yang masih sah. Sekarang grace 30 detik menjadi
 // "jendela aman" tempat keluarga tidak disentuh.
 //
@@ -869,7 +869,7 @@ func TestRefresh_PenerusSudahDicabut_DalamGrace_409(t *testing.T) {
 
 	// Sekarang tokenAwal.revoked_at != NULL, replaced_by = tokenB,
 	// tokenB.revoked_at != NULL. tokenC masih aktif.
-	// Kirim tokenAwal dalam grace → case 2b (successor tidak aktif) → 409.
+	// Kirim tokenAwal dalam grace -> case 2b (successor tidak aktif) -> 409.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("tokenAwal reuse dalam grace: status=%d, mau 409, body=%s", rec.Code, rec.Body.String())
@@ -878,7 +878,7 @@ func TestRefresh_PenerusSudahDicabut_DalamGrace_409(t *testing.T) {
 		t.Errorf("code = %s, mau REFRESH_IN_PROGRESS", kodeError(t, rec))
 	}
 
-	// Keluarga TIDAK dicabut — tokenC (aktif) masih utuh.
+	// Keluarga TIDAK dicabut: tokenC (aktif) masih utuh.
 	var aktif int
 	err = pool.QueryRow(context.Background(), `
 		SELECT count(*) FROM refresh_tokens
@@ -896,7 +896,7 @@ func TestRefresh_PenerusSudahDicabut_DalamGrace_409(t *testing.T) {
 // setelah grace lewat, reuse terdeteksi sebagai pencurian dan seluruh
 // keluarga dicabut. Ini aturan cabang 3.
 func TestRefresh_PenerusSudahDicabutLewatGrace_Pencurian(t *testing.T) {
-	// Grace efektif: -1s → lewat langsung tanpa butuh backdate manual.
+	// Grace efektif: -1s -> lewat langsung tanpa butuh backdate manual.
 	auth.SetGracePeriodUntukTest(-1 * time.Second)
 	defer auth.SetGracePeriodUntukTest(30 * time.Second)
 
@@ -941,7 +941,7 @@ func TestRefresh_PenerusSudahDicabutLewatGrace_Pencurian(t *testing.T) {
 		t.Fatalf("refresh kedua: %s", rec.Body.String())
 	}
 
-	// tokenAwal lewat grace (grace = -1s) → pencurian, keluarga dicabut.
+	// tokenAwal lewat grace (grace = -1s) -> pencurian, keluarga dicabut.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("tokenAwal lewat grace: status=%d, mau 401, body=%s", rec.Code, rec.Body.String())
@@ -964,7 +964,7 @@ func TestRefresh_PenerusSudahDicabutLewatGrace_Pencurian(t *testing.T) {
 }
 
 // TestRefresh_BalasanHilang_RecoveriPenerusUmurCukup memverifikasi skenario
-// "balasan refresh hilang": server commit rotasi X→Y tapi Set-Cookie tidak
+// "balasan refresh hilang": server commit rotasi X->Y tapi Set-Cookie tidak
 // sampai ke browser, dan browser mengirim ulang X setelah penerus Y
 // berumur ≥ 2 detik. Cabang 2a harus ambil alih: Y dicabut, token
 // baru Z diterbitkan, dan Z menjadi pengganti X. Keluarga tetap
@@ -1036,7 +1036,7 @@ func TestRefresh_BalasanHilang_RecoveriPenerusUmurCukup(t *testing.T) {
 	}
 	tokenZ := refreshCookieDariResponse(rec)
 	if tokenZ == nil || tokenZ.Value == tokenX.Value || tokenZ.Value == tokenY.Value {
-		t.Fatal("token Z harus baru — bukan X atau Y")
+		t.Fatal("token Z harus baru: bukan X atau Y")
 	}
 
 	// Verifikasi DB: Y dicabut, Z aktif, tepat 1 token aktif di keluarga.
@@ -1063,7 +1063,7 @@ func TestRefresh_BalasanHilang_RecoveriPenerusUmurCukup(t *testing.T) {
 		t.Error("Y harus sudah dicabut oleh cabang 2a")
 	}
 
-	// Z (cookie baru dari response) bisa dipakai untuk refresh — Z aktif.
+	// Z (cookie baru dari response) bisa dipakai untuk refresh: Z aktif.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenZ})
 	if rec.Code != http.StatusOK {
 		t.Errorf("refresh dengan Z baru: status=%d, mau 200, body=%s", rec.Code, rec.Body.String())
@@ -1072,9 +1072,9 @@ func TestRefresh_BalasanHilang_RecoveriPenerusUmurCukup(t *testing.T) {
 
 // TestRefresh_BalasanHilang_PenerusTerlaluMuda_409 memverifikasi bahwa
 // cabang 2a TIDAK aktif jika penerus masih terlalu muda. Skenario:
-// X→Y rotasi sukses, Y belum berumur 2 detik, browser mengirim X lagi
+// X->Y rotasi sukses, Y belum berumur 2 detik, browser mengirim X lagi
 // (misalnya render halaman sangat cepat). Sistem harus tetap
-// memperlakukan ini sebagai balapan wajar → 409, keluarga tidak
+// memperlakukan ini sebagai balapan wajar -> 409, keluarga tidak
 // disentuh.
 func TestRefresh_BalasanHilang_PenerusTerlaluMuda_409(t *testing.T) {
 	h := serverLengkap(t)
@@ -1116,7 +1116,7 @@ func TestRefresh_BalasanHilang_PenerusTerlaluMuda_409(t *testing.T) {
 		t.Fatalf("family_id: %v", err)
 	}
 
-	// Y masih baru. Kirim X lagi → case 2b: 409.
+	// Y masih baru. Kirim X lagi -> case 2b: 409.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenX})
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("X dalam grace dengan Y masih muda: status=%d, mau 409, body=%s", rec.Code, rec.Body.String())
@@ -1140,12 +1140,12 @@ func TestRefresh_BalasanHilang_PenerusTerlaluMuda_409(t *testing.T) {
 
 // TestRefresh_BalasanHilang_DeteksiPencurianTetapJalan memverifikasi bahwa
 // deteksi pencurian tetap bekerja setelah perubahan: setelah skenario
-// balasan hilang (X→Y discard, Y dicabut oleh 2a, Z jadi pengganti X),
-// Y (yang sudah diganti/dicabut) dikirim lagi LEWAT grace → reuse,
+// balasan hilang (X->Y discard, Y dicabut oleh 2a, Z jadi pengganti X),
+// Y (yang sudah diganti/dicabut) dikirim lagi LEWAT grace -> reuse,
 // seluruh keluarga dicabut. Ini memastikan cabang 2a tidak membuka
 // celah keamanan baru.
 func TestRefresh_BalasanHilang_DeteksiPencurianTetapJalan(t *testing.T) {
-	// Grace normal 5s — cukup untuk 2a fire, tidak untuk Y reuse
+	// Grace normal 5s: cukup untuk 2a fire, tidak untuk Y reuse
 	// yang akan kita backdate secara eksplisit.
 	auth.SetGracePeriodUntukTest(5 * time.Second)
 	defer auth.SetGracePeriodUntukTest(30 * time.Second)
@@ -1192,7 +1192,7 @@ func TestRefresh_BalasanHilang_DeteksiPencurianTetapJalan(t *testing.T) {
 		t.Fatalf("ambil Y: %v", err)
 	}
 
-	// Mundurkan Y lewat 2 detik, refresh X → 2a: Y dicabut, Z jadi
+	// Mundurkan Y lewat 2 detik, refresh X -> 2a: Y dicabut, Z jadi
 	// pengganti X. Z tidak dikembalikan ke test (simulasi: dibuang).
 	_, err = pool.Exec(context.Background(), `
 		UPDATE refresh_tokens SET created_at = now() - INTERVAL '5 seconds' WHERE id = $1`,
@@ -1218,7 +1218,7 @@ func TestRefresh_BalasanHilang_DeteksiPencurianTetapJalan(t *testing.T) {
 		t.Fatalf("backdate Y.revoked_at: %v", err)
 	}
 
-	// Kirim Y lewat grace → case 3 → reuse, keluarga dicabut.
+	// Kirim Y lewat grace -> case 3 -> reuse, keluarga dicabut.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenY})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("Y lewat grace: status=%d, mau 401, body=%s", rec.Code, rec.Body.String())
@@ -1241,7 +1241,7 @@ func TestRefresh_BalasanHilang_DeteksiPencurianTetapJalan(t *testing.T) {
 
 // TestRefresh_BalasanHilang_Paralel_TepatSatuAktif menguji beberapa
 // refresh paralel dalam kondisi cabang 2a (Y berumur >= 2 detik). Di
-// akhir, keluarga harus berisi tepat 1 token aktif — tidak ada
+// akhir, keluarga harus berisi tepat 1 token aktif: tidak ada
 // token rangkap yang lolos karena tidak adanya lock.
 func TestRefresh_BalasanHilang_Paralel_TepatSatuAktif(t *testing.T) {
 	h := serverLengkap(t)
@@ -1290,7 +1290,7 @@ func TestRefresh_BalasanHilang_Paralel_TepatSatuAktif(t *testing.T) {
 
 	// Beberapa refresh X paralel. Hanya yang pertama akan masuk cabang
 	// 2a (lock FOR UPDATE); sisanya akan melihat Y sudah dicabut (kalau
-	// yang pertama commit duluan) → case 2b → 409, atau masuk 2a juga
+	// yang pertama commit duluan) -> case 2b -> 409, atau masuk 2a juga
 	// kalau lock serializes semuanya.
 	const N = 5
 	mulai := make(chan struct{})
@@ -1320,7 +1320,7 @@ func TestRefresh_BalasanHilang_Paralel_TepatSatuAktif(t *testing.T) {
 	t.Logf("paralel 2a: sukses=%d, in_progress=%d", sukses, inProgress)
 
 	// Tepat satu keluarga harus punya tepat 1 token aktif. Setiap
-	// request yang dapat 200 menerbitkan token baru dari X — semua
+	// request yang dapat 200 menerbitkan token baru dari X: semua
 	// request itu serial melalui lock FOR UPDATE, dan setiap
 	// penerus lama di-revoke sebelum token baru diterbitkan. Jadi
 	// tiap sukses = 1 token aktif baru, tapi penerus lama dicabut.
@@ -1344,9 +1344,9 @@ func TestRefresh_BalasanHilang_Paralel_TepatSatuAktif(t *testing.T) {
 // TestLogout_DanLangsungRefresh_401DenganWaktuAsli memverifikasi bahwa
 // logout sekarang menyimpan revoked_at = waktu pencabutan yang sebenarnya
 // (bukan backdate 1 jam) dan refresh setelah logout langsung kena
-// cabang 4 (tanpa penerus) → 401 REFRESH_TOKEN_REUSED. Status 401 harus
+// cabang 4 (tanpa penerus) -> 401 REFRESH_TOKEN_REUSED. Status 401 harus
 // tercapai bahkan dalam 30 detik grace, dan selisih revoked_at dengan
-// now() harus kecil — menunjukkan data waktu tidak dimanipulasi.
+// now() harus kecil: menunjukkan data waktu tidak dimanipulasi.
 func TestLogout_DanLangsungRefresh_401DenganWaktuAsli(t *testing.T) {
 	pool := dbUji(t)
 	h := serverLengkap(t)
@@ -1388,7 +1388,7 @@ func TestLogout_DanLangsungRefresh_401DenganWaktuAsli(t *testing.T) {
 	waktuSetelahLogout := time.Now()
 
 	// Refresh tokenAwal di bawah 30 detik grace. Cabang a (keluarga
-	// sudah tidak punya token aktif — logout mencabut seluruhnya) →
+	// sudah tidak punya token aktif: logout mencabut seluruhnya) ->
 	// 401 REFRESH_TOKEN_INVALID, tanpa log peringatan reuse, tanpa
 	// DB changes.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
@@ -1425,9 +1425,9 @@ func TestLogout_DanLangsungRefresh_401DenganWaktuAsli(t *testing.T) {
 		if err := rows.Scan(&ra); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
-		// Selisih harus kecil — beberapa detik, bukan jam.
+		// Selisih harus kecil: beberapa detik, bukan jam.
 		if ra.Before(waktuSebelumLogout.Add(-2 * time.Second)) {
-			t.Errorf("revoked_at = %v, lebih lama dari logout — backdate tidak seharusnya dipakai", ra)
+			t.Errorf("revoked_at = %v, lebih lama dari logout: backdate tidak seharusnya dipakai", ra)
 		}
 		if ra.After(waktuSetelahLogout.Add(2 * time.Second)) {
 			t.Errorf("revoked_at = %v, lebih baru dari logout", ra)
@@ -1466,7 +1466,7 @@ func TestLogout_DanRefresh_NoLogReuse(t *testing.T) {
 		}
 	}
 
-	// Rotasi X → Y supaya X.replaced_by = Y. Setelah logout, replaced_by
+	// Rotasi X -> Y supaya X.replaced_by = Y. Setelah logout, replaced_by
 	// ini harus tetap ada (logout tidak menyentuhnya).
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
 	if rec.Code != http.StatusOK {
@@ -1494,7 +1494,7 @@ func TestLogout_DanRefresh_NoLogReuse(t *testing.T) {
 	}
 
 	// Refresh dengan tokenAwal di bawah 30 detik grace. Cabang a
-	// (keluarga kosong) → 401 REFRESH_TOKEN_INVALID.
+	// (keluarga kosong) -> 401 REFRESH_TOKEN_INVALID.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("refresh setelah logout: %d, body=%s", rec.Code, rec.Body.String())
@@ -1503,7 +1503,7 @@ func TestLogout_DanRefresh_NoLogReuse(t *testing.T) {
 		t.Errorf("code = %s, mau REFRESH_TOKEN_INVALID", kodeError(t, rec))
 	}
 
-	// TIDAK ada log peringatan reuse — ini yang membedakan logout dari
+	// TIDAK ada log peringatan reuse: ini yang membedakan logout dari
 	// pencurian.
 	if strings.Contains(logBuf.String(), "refresh token reuse terdeteksi") {
 		t.Errorf("ada log peringatan reuse, padahal ini bukan pencurian. Log:\n%s", logBuf.String())
@@ -1518,7 +1518,7 @@ func TestLogout_DanRefresh_NoLogReuse(t *testing.T) {
 
 // TestLogout_SetelahRotasi_X401_NoLog memverifikasi bahwa X yang
 // sudah dirotasi (replaced_by != NULL), lalu logout, lalu dikirim
-// lagi dalam grace → 401 REFRESH_TOKEN_INVALID tanpa log reuse.
+// lagi dalam grace -> 401 REFRESH_TOKEN_INVALID tanpa log reuse.
 // Sebelum revisi ini, X masuk cabang 2b (race, 409) karena replaced_by
 // masih menunjuk ke Y yang juga sudah di-revoke. Sekarang cabang a
 // aktif duluan karena keluarga sudah kosong.
@@ -1542,7 +1542,7 @@ func TestLogout_SetelahRotasi_X401_NoLog(t *testing.T) {
 		}
 	}
 
-	// X → Y, supaya X.replaced_by = Y dan Y aktif.
+	// X -> Y, supaya X.replaced_by = Y dan Y aktif.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("refresh: %s", rec.Body.String())
@@ -1556,7 +1556,7 @@ func TestLogout_SetelahRotasi_X401_NoLog(t *testing.T) {
 	}
 
 	// Refresh X dalam grace. X.revoked_at baru, X.replaced_by = Y (tidak
-	// disentuh logout). Tapi keluarga sudah kosong → cabang a.
+	// disentuh logout). Tapi keluarga sudah kosong -> cabang a.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenAwal})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("refresh X dalam grace setelah logout: %d, body=%s", rec.Code, rec.Body.String())
@@ -1574,7 +1574,7 @@ func TestLogout_SetelahRotasi_X401_NoLog(t *testing.T) {
 // TestRefresh_PenerusDicabut2a_LogReuseAda memverifikasi bahwa Y
 // yang dicabut oleh cabang 2a (replaced_by NULL sejak dibuat),
 // ketika dikirim lagi dalam grace DAN keluarga masih punya token
-// aktif (Z dari 2a), tetap masuk cabang b → reuse dengan log.
+// aktif (Z dari 2a), tetap masuk cabang b -> reuse dengan log.
 // Y tidak punya replaced_by, BUKAN keluarga kosong, jadi cabang a
 // tidak aktif.
 func TestRefresh_PenerusDicabut2a_LogReuseAda(t *testing.T) {
@@ -1598,7 +1598,7 @@ func TestRefresh_PenerusDicabut2a_LogReuseAda(t *testing.T) {
 		}
 	}
 
-	// X → Y.
+	// X -> Y.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenX})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("refresh X: %s", rec.Body.String())
@@ -1628,7 +1628,7 @@ func TestRefresh_PenerusDicabut2a_LogReuseAda(t *testing.T) {
 		t.Fatalf("mundurkan Y: %v", err)
 	}
 
-	// Refresh X → cabang 2a: Y dicabut, Z dibuat, X.replaced_by = Z.
+	// Refresh X -> cabang 2a: Y dicabut, Z dibuat, X.replaced_by = Z.
 	logBuf.Reset()
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenX})
 	if rec.Code != http.StatusOK {
@@ -1638,7 +1638,7 @@ func TestRefresh_PenerusDicabut2a_LogReuseAda(t *testing.T) {
 
 	// Y.revoked_at != NULL (set oleh 2a), Y.replaced_by = NULL.
 	// Z adalah token aktif di keluarga. Y masuk cabang b (X.replaced_by
-	// == NULL dan keluarga tidak kosong) → reuse, log, keluarga dicabut.
+	// == NULL dan keluarga tidak kosong) -> reuse, log, keluarga dicabut.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenY})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("Y dalam grace setelah 2a: %d, mau 401, body=%s", rec.Code, rec.Body.String())
@@ -1664,7 +1664,7 @@ func TestRefresh_PenerusDicabut2a_LogReuseAda(t *testing.T) {
 }
 
 // token penerus yang dicabut oleh cabang 2a (recoveri), ketika dikirim
-// lagi DALAM grace, langsung kena cabang 4 (tanpa penerus) → 401
+// lagi DALAM grace, langsung kena cabang 4 (tanpa penerus) -> 401
 // REFRESH_TOKEN_REUSED. Penerus tidak pernah dirotasi sendiri, jadi
 // replaced_by-nya NULL sejak dibuat, dan cabang 4 aktif tanpa peduli
 // selisih waktu.
@@ -1724,7 +1724,7 @@ func TestRefresh_PenerusDicabut2a_DalamGrace_Reuse(t *testing.T) {
 		t.Fatalf("mundurkan Y: %v", err)
 	}
 
-	// Refresh X → cabang 2a. Y dicabut, Z jadi pengganti X. Y.replaced_by
+	// Refresh X -> cabang 2a. Y dicabut, Z jadi pengganti X. Y.replaced_by
 	// tetap NULL (Y tidak pernah dirotasi sendiri).
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenX})
 	if rec.Code != http.StatusOK {
@@ -1733,8 +1733,8 @@ func TestRefresh_PenerusDicabut2a_DalamGrace_Reuse(t *testing.T) {
 	_ = refreshCookieDariResponse(rec)
 
 	// Y.revoked_at di-set ke now() (oleh cabang 2a), Y.replaced_by = NULL.
-	// Kirim Y DALAM grace (beberapa milidetik setelah cabang 2a) — cabang 4
-	// aktif (Y.replaced_by == NULL) → 401 REFRESH_TOKEN_REUSED.
+	// Kirim Y DALAM grace (beberapa milidetik setelah cabang 2a): cabang 4
+	// aktif (Y.replaced_by == NULL) -> 401 REFRESH_TOKEN_REUSED.
 	rec = kirimDenganCookie(t, h, http.MethodPost, "/api/v1/auth/refresh", nil, "", []*http.Cookie{tokenY})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("Y dalam grace setelah 2a: status = %d, mau 401, body = %s", rec.Code, rec.Body.String())
@@ -1743,7 +1743,7 @@ func TestRefresh_PenerusDicabut2a_DalamGrace_Reuse(t *testing.T) {
 		t.Errorf("code = %s, mau REFRESH_TOKEN_REUSED", kodeError(t, rec))
 	}
 
-	// Keluarga dicabut — token aktif tinggal 0.
+	// Keluarga dicabut: token aktif tinggal 0.
 	var aktif int
 	err = pool.QueryRow(context.Background(), `
 		SELECT count(*) FROM refresh_tokens

@@ -15,38 +15,38 @@ import { isBookingCancelable, isSessionActionable, groupDashboardBookings } from
 describe("isBookingCancelable", () => {
   const MS_3_JAM = 3 * 60 * 60 * 1000;
 
-  it("jauh di atas 3 jam → bisa dibatalkan", () => {
-    // Slot mulai 24 jam dari sekarang → jauh di atas batas.
+  it("jauh di atas 3 jam -> bisa dibatalkan", () => {
+    // Slot mulai 24 jam dari sekarang -> jauh di atas batas.
     const slotStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
     expect(isBookingCancelable(slotStart)).toBe(true);
   });
 
-  it("tepat di atas 3 jam → bisa dibatalkan", () => {
-    // Slot mulai 3 jam + 1 detik dari sekarang → sedikit di atas batas.
+  it("tepat di atas 3 jam -> bisa dibatalkan", () => {
+    // Slot mulai 3 jam + 1 detik dari sekarang -> sedikit di atas batas.
     const slotStart = new Date(Date.now() + MS_3_JAM + 1000);
     expect(isBookingCancelable(slotStart)).toBe(true);
   });
 
-  it("sedikit di bawah 3 jam → TIDAK bisa dibatalkan", () => {
-    // Slot mulai 3 jam - 1 detik dari sekarang → sedikit di bawah batas.
+  it("sedikit di bawah 3 jam -> TIDAK bisa dibatalkan", () => {
+    // Slot mulai 3 jam - 1 detik dari sekarang -> sedikit di bawah batas.
     const slotStart = new Date(Date.now() + MS_3_JAM - 1000);
     expect(isBookingCancelable(slotStart)).toBe(false);
   });
 
-  it("tepat 3 jam → TIDAK bisa dibatalkan", () => {
+  it("tepat 3 jam -> TIDAK bisa dibatalkan", () => {
     // Slot mulai tepat 3 jam dari sekarang.
-    // getTime() - Date.now() == 3*3600*1000 → TIDAK > → false.
+    // getTime() - Date.now() == 3*3600*1000 -> TIDAK > -> false.
     const slotStart = new Date(Date.now() + MS_3_JAM);
     expect(isBookingCancelable(slotStart)).toBe(false);
   });
 
-  it("sedikit di atas 3 jam (1ms) → bisa dibatalkan", () => {
+  it("sedikit di atas 3 jam (1ms) -> bisa dibatalkan", () => {
     // Slot mulai 3 jam + 1ms dari sekarang.
     const slotStart = new Date(Date.now() + MS_3_JAM + 1);
     expect(isBookingCancelable(slotStart)).toBe(true);
   });
 
-  it("slot sudah lewat → TIDAK bisa dibatalkan", () => {
+  it("slot sudah lewat -> TIDAK bisa dibatalkan", () => {
     // Slot mulai 1 jam yang lalu.
     const slotStart = new Date(Date.now() - 60 * 60 * 1000);
     expect(isBookingCancelable(slotStart)).toBe(false);
@@ -54,30 +54,30 @@ describe("isBookingCancelable", () => {
 });
 
 describe("isSessionActionable", () => {
-  it("tepat di start_at → bisa ditindaklanjuti", () => {
-    // Slot mulai tepat sekarang → startAt.getTime() == Date.now() → >= → true.
+  it("tepat di start_at -> bisa ditindaklanjuti", () => {
+    // Slot mulai tepat sekarang -> startAt.getTime() == Date.now() -> >= -> true.
     const slotStart = new Date(Date.now());
     expect(isSessionActionable(slotStart)).toBe(true);
   });
 
-  it("sedikit sebelum start_at → TIDAK bisa ditindaklanjuti", () => {
+  it("sedikit sebelum start_at -> TIDAK bisa ditindaklanjuti", () => {
     // Slot mulai 1 detik lagi.
     const slotStart = new Date(Date.now() + 1000);
     expect(isSessionActionable(slotStart)).toBe(false);
   });
 
-  it("sedikit sesudah start_at → bisa ditindaklanjuti", () => {
+  it("sedikit sesudah start_at -> bisa ditindaklanjuti", () => {
     // Slot mulai 1 detik yang lalu.
     const slotStart = new Date(Date.now() - 1000);
     expect(isSessionActionable(slotStart)).toBe(true);
   });
 
-  it("satu jam yang lalu → bisa ditindaklanjuti", () => {
+  it("satu jam yang lalu -> bisa ditindaklanjuti", () => {
     const slotStart = new Date(Date.now() - 60 * 60 * 1000);
     expect(isSessionActionable(slotStart)).toBe(true);
   });
 
-  it("satu jam ke depan → TIDAK bisa ditindaklanjuti", () => {
+  it("satu jam ke depan -> TIDAK bisa ditindaklanjuti", () => {
     const slotStart = new Date(Date.now() + 60 * 60 * 1000);
     expect(isSessionActionable(slotStart)).toBe(false);
   });
@@ -108,7 +108,7 @@ describe("groupDashboardBookings", () => {
     };
   }
 
-  it("booking di masa lalu → needsFollowUp", () => {
+  it("booking di masa lalu -> needsFollowUp", () => {
     const now = new Date("2026-09-11T12:00:00Z"); // 19:00 WIB
     const yesterday = new Date("2026-09-11T08:00:00Z"); // 15:00 WIB kemarin
     const booking = makeBooking("b1", yesterday);
@@ -121,7 +121,7 @@ describe("groupDashboardBookings", () => {
     expect(result.upcoming.size).toBe(0);
   });
 
-  it("booking hari ini tapi belum lewat → today", () => {
+  it("booking hari ini tapi belum lewat -> today", () => {
     // now: 2026-09-11T12:00:00Z = 19:00 WIB
     // booking: 2026-09-11T14:00:00Z = 21:00 WIB (hari yang sama)
     const now = new Date("2026-09-11T12:00:00Z");
@@ -136,7 +136,7 @@ describe("groupDashboardBookings", () => {
     expect(result.upcoming.size).toBe(0);
   });
 
-  it("booking hari besok → upcoming", () => {
+  it("booking hari besok -> upcoming", () => {
     // now: 2026-09-11T12:00:00Z = 19:00 WIB
     // booking: 2026-09-12T08:00:00Z = 15:00 WIB besok
     const now = new Date("2026-09-11T12:00:00Z");
@@ -151,10 +151,10 @@ describe("groupDashboardBookings", () => {
     expect(result.needsFollowUp).toHaveLength(0);
   });
 
-  it("booking jam 17:00 UTC lintas batas hari WIB → upcoming besok", () => {
+  it("booking jam 17:00 UTC lintas batas hari WIB -> upcoming besok", () => {
     // KLAS BUG: jam 17:00 UTC = 00:00 WIB keesokan harinya
     // now: 2026-09-10T16:00:00Z = 23:00 WIB (10 Sep)
-    // booking: 2026-09-10T17:00:00Z = 00:00 WIB (11 Sep) → HARUS upcoming besok
+    // booking: 2026-09-10T17:00:00Z = 00:00 WIB (11 Sep) -> HARUS upcoming besok
     const now = new Date("2026-09-10T16:00:00Z");
     const slotAtMidnight = new Date("2026-09-10T17:00:00Z"); // 00:00 WIB 11 Sep
     const booking = makeBooking("b1", slotAtMidnight);
@@ -168,9 +168,9 @@ describe("groupDashboardBookings", () => {
     expect(result.needsFollowUp).toHaveLength(0);
   });
 
-  it("booking jam 16:59 UTC tetap hari kemarin di WIB → today", () => {
+  it("booking jam 16:59 UTC tetap hari kemarin di WIB -> today", () => {
     // now: 2026-09-10T15:00:00Z = 22:00 WIB (10 Sep)
-    // booking: 2026-09-10T16:59:00Z = 23:59 WIB (10 Sep) → masih hari yang sama
+    // booking: 2026-09-10T16:59:00Z = 23:59 WIB (10 Sep) -> masih hari yang sama
     const now = new Date("2026-09-10T15:00:00Z");
     const slotAtAlmostMidnight = new Date("2026-09-10T16:59:00Z"); // 23:59 WIB 10 Sep
     const booking = makeBooking("b1", slotAtAlmostMidnight);
@@ -181,7 +181,7 @@ describe("groupDashboardBookings", () => {
     expect(result.upcoming.size).toBe(0);
   });
 
-  it("multiple bookings di berbagai bucket → terkelompok dengan benar", () => {
+  it("multiple bookings di berbagai bucket -> terkelompok dengan benar", () => {
     // now: 2026-09-11T12:00:00Z = 19:00 WIB
     const now = new Date("2026-09-11T12:00:00Z");
     const bookings = [

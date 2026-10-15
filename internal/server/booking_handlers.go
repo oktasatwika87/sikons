@@ -22,7 +22,7 @@ type createBookingRequest struct {
 	SlotID      string `json:"slot_id"`
 	Topic       string `json:"topic"`
 	Description string `json:"description"`
-	// StudentID sengaja tidak ada di sini — identitas pemanggil SELALU dari token.
+	// StudentID sengaja tidak ada di sini: identitas pemanggil SELALU dari token.
 }
 
 type bookingResponse struct {
@@ -89,7 +89,7 @@ func (s *Server) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validasi topic: wajib 3..200 karakter (diukur dalam RUNA, bukan byte —
+	// Validasi topic: wajib 3..200 karakter (diukur dalam RUNA, bukan byte;
 	// satu emoji harus dihitung satu karakter).
 	req.Topic = strings.TrimSpace(req.Topic)
 	topicRunes := utf8.RuneCountInString(req.Topic)
@@ -281,7 +281,7 @@ func (s *Server) handleGetBooking(w http.ResponseWriter, r *http.Request) {
 // field person yang tidak relevan (mahasiswa untuk student, dosen untuk lecturer)
 // sengaja tidak dimunculkan agar klien tidak bingung mana yang harus dipakai.
 //
-// lecturer_note hanya dikirim ke dosen — catatan dosen bersifat privat, dan
+// lecturer_note hanya dikirim ke dosen: catatan dosen bersifat privat, dan
 // frontend wajib mendapat respons yang konsisten dengan kontrak ini. Field ini
 // menggunakan omitempty, jadi cukup tidak di-set untuk mahasiswa.
 func viewToResponse(v *booking.BookingView, role string) bookingResponse {

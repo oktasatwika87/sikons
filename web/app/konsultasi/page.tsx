@@ -134,7 +134,7 @@ function KonsultasiContent() {
         </Card>
       )}
 
-      {/* Booking list — card layout untuk responsive */}
+      {/* Booking list: card layout untuk responsive */}
       {bookingsQuery.data && bookingsQuery.data.bookings.length > 0 && (
         <div className="space-y-4 md:hidden">
           {bookingsQuery.data.bookings.map((booking) => (
@@ -148,7 +148,7 @@ function KonsultasiContent() {
         </div>
       )}
 
-      {/* Booking list — table layout untuk desktop */}
+      {/* Booking list: table layout untuk desktop */}
       {bookingsQuery.data && bookingsQuery.data.bookings.length > 0 && (
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
@@ -241,7 +241,7 @@ function KonsultasiCard({ booking, isStudent, onCancel }: KonsultasiCardProps) {
       <CardContent>
         <p className="text-sm text-muted-foreground">
           {formatJakartaLongDate(booking.slot.start_at)} ·{" "}
-          {formatJakartaTime(booking.slot.start_at)}–
+          {formatJakartaTime(booking.slot.start_at)}-
           {formatJakartaTime(booking.slot.end_at)}
         </p>
         {booking.description && (
@@ -249,7 +249,7 @@ function KonsultasiCard({ booking, isStudent, onCancel }: KonsultasiCardProps) {
             {booking.description}
           </p>
         )}
-        {/* Catatan dosen untuk baris completed — hanya untuk dosen */}
+        {/* Catatan dosen untuk baris completed: hanya untuk dosen */}
         {!isStudent && booking.lecturer_note && (
           <p className="mt-2 text-sm italic text-muted-foreground border-t pt-2">
             Catatan: {booking.lecturer_note}
@@ -319,7 +319,7 @@ function KonsultasiRow({ booking, isStudent, onCancel }: KonsultasiRowProps) {
       <td className="py-3 pr-4 whitespace-nowrap">
         <div>{formatJakartaLongDate(booking.slot.start_at)}</div>
         <div className="text-xs text-muted-foreground">
-          {formatJakartaTime(booking.slot.start_at)}–{formatJakartaTime(booking.slot.end_at)}
+          {formatJakartaTime(booking.slot.start_at)}-{formatJakartaTime(booking.slot.end_at)}
         </div>
       </td>
       <td className="py-3 pr-4">
@@ -342,7 +342,7 @@ function KonsultasiRow({ booking, isStudent, onCancel }: KonsultasiRowProps) {
           </Button>
         )}
         {!canCancel && isStudent && booking.status === "confirmed" && (
-          <span className="text-xs text-muted-foreground">–</span>
+          <span className="text-xs text-muted-foreground">-</span>
         )}
       </td>
     </tr>

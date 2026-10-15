@@ -60,7 +60,7 @@ function AkunContent() {
             <span>{user.email}</span>
 
             <span className="text-muted-foreground">Nomor identitas</span>
-            <span>{user.identity_number ?? "—"}</span>
+            <span>{user.identity_number ?? "-"}</span>
 
             <span className="text-muted-foreground">Peran</span>
             <span>{roleLabel[user.role] ?? user.role}</span>

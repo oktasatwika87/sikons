@@ -12,7 +12,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // e2e adalah Playwright test — tidak perlu dilint di pipeline CI.
+    // e2e adalah Playwright test: tidak perlu dilint di pipeline CI.
     "e2e/**",
   ]),
 ]);

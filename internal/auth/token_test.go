@@ -48,7 +48,7 @@ func TestParse_TokenKedaluwarsa(t *testing.T) {
 	}
 
 	// Jam palsu: token diterbitkan "satu jam yang lalu" dengan masa berlaku
-	// 15 menit. Tidak perlu menunggu sungguhan — inilah gunanya jam bisa
+	// 15 menit. Tidak perlu menunggu sungguhan: inilah gunanya jam bisa
 	// disuntik alih-alih memanggil time.Now() langsung di dalam kode.
 	satuJamLalu := time.Now().Add(-time.Hour)
 	i.jam = func() time.Time { return satuJamLalu }
@@ -114,7 +114,7 @@ func TestParse_TokenTanpaTandaTanganDitolak(t *testing.T) {
 	}
 
 	if _, err := i.Parse(token); !errors.Is(err, ErrTokenInvalid) {
-		t.Fatalf("TOKEN TANPA TANDA TANGAN DITERIMA (err = %v) — ini lubang keamanan", err)
+		t.Fatalf("TOKEN TANPA TANDA TANGAN DITERIMA (err = %v): ini lubang keamanan", err)
 	}
 }
 

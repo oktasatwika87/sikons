@@ -16,7 +16,7 @@ var poolUji *pgxpool.Pool
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		fmt.Println("TEST_DATABASE_URL kosong — test lecturer dilewati")
+		fmt.Println("TEST_DATABASE_URL kosong: test lecturer dilewati")
 		os.Exit(0)
 	}
 

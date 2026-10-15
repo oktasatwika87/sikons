@@ -1,10 +1,10 @@
 /**
- * Utilitas tanggal/waktu terpusat — SEMUA tampilan waktu dari backend (RFC3339
+ * Utilitas tanggal/waktu terpusat: SEMUA tampilan waktu dari backend (RFC3339
  * UTC) di frontend WAJIB lewat file ini.
  *
  * Aturan keras (lihat RINGKASAN-M5C keputusan #7):
  *  - Backend menyimpan semua waktu sebagai `timestamptz` UTC.
- *  - Zona tampilan adalah Asia/Jakarta, TETAP — tidak ikut zona browser.
+ *  - Zona tampilan adalah Asia/Jakarta, TETAP: tidak ikut zona browser.
  *  - `new Date(...).toLocaleString()` itu IKUT zona browser, jadi DILARANG.
  *  - Pustaka: `date-fns` + `date-fns-tz` (konsisten dengan date-fns yang sudah
  *    disebut di brief).
@@ -15,7 +15,7 @@
  *  - TAPI `format(date, ...)` dari date-fns SELALU pakai zona LOKAL runtime.
  *    Di jsdom (TZ=UTC) atau macOS dev (TZ=Asia/Makassar) hasilnya beda.
  *  - Solusi: SELALU pakai `formatInTimeZone(date, TIMEZONE, fmt)` untuk
- *    ekstraksi komponen tanggal yang akan ditampilkan — TIDAK ada
+ *    ekstraksi komponen tanggal yang akan ditampilkan: TIDAK ada
  *    `format(zonedDate, ...)`.
  *
  * Batas hari Asia/Jakarta = 17:00 UTC (= 00:00 WIB keesokan harinya).
@@ -25,7 +25,7 @@
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { id as localeId } from "date-fns/locale";
 
-/** Zona tampilan tetap — single source of truth. */
+/** Zona tampilan tetap: single source of truth. */
 export const TIMEZONE = "Asia/Jakarta";
 
 /** Hari dalam Bahasa Indonesia (Senin..Minggu) untuk label kolom kalender. */
@@ -40,8 +40,8 @@ const ISO_DAY_NAMES_LONG: Record<number, string> = {
 };
 
 /**
- * Parse input string|Date → Date UTC. `new Date(rfc3339)` selalu UTC untuk
- * string dengan `Z` atau `±HH:MM` — aman dipakai tanpa Zone.
+ * Parse input string|Date -> Date UTC. `new Date(rfc3339)` selalu UTC untuk
+ * string dengan `Z` atau `±HH:MM`: aman dipakai tanpa Zone.
  */
 function parseRFC3339(value: string | Date): Date {
   if (value instanceof Date) return value;
@@ -50,7 +50,7 @@ function parseRFC3339(value: string | Date): Date {
 
 /**
  * ISO weekday (Senin=1, Minggu=7) untuk `value`, dihitung di zona Jakarta.
- * Token `i` di date-fns v4 sudah ISO weekday — lihat catatan revisi di
+ * Token `i` di date-fns v4 sudah ISO weekday: lihat catatan revisi di
  * header file ini.
  */
 function isoWeekdayJakarta(value: string | Date): number {
@@ -58,7 +58,7 @@ function isoWeekdayJakarta(value: string | Date): number {
 }
 
 /**
- * Format tanggal singkat "10 Sep" di zona Asia/Jakarta — untuk header
+ * Format tanggal singkat "10 Sep" di zona Asia/Jakarta: untuk header
  * kolom hari di kalender (di bawah label "Senin"). Tidak sertakan tahun
  * karena minggu kalender sudah ditampilkan di header utama.
  */
@@ -69,17 +69,17 @@ export function formatJakartaShortDate(value: string | Date): string {
 }
 
 /**
- * Format jam singkat "HH:mm" di zona Asia/Jakarta — untuk tampilan slot
+ * Format jam singkat "HH:mm" di zona Asia/Jakarta: untuk tampilan slot
  * di kalender. Tidak menampilkan zona agar tidak memenuhi UI.
  *
- * Slot 17:00 UTC → "00:00" (keesokan harinya di WIB).
+ * Slot 17:00 UTC -> "00:00" (keesokan harinya di WIB).
  */
 export function formatJakartaTime(value: string | Date): string {
   return formatInTimeZone(parseRFC3339(value), TIMEZONE, "HH:mm");
 }
 
 /**
- * Format tanggal lengkap "Jumat, 11 September 2026" — untuk header minggu
+ * Format tanggal lengkap "Jumat, 11 September 2026": untuk header minggu
  * kalender. Pakai locale id dari date-fns.
  */
 export function formatJakartaLongDate(value: string | Date): string {
@@ -97,10 +97,10 @@ export function jakartaDayName(value: string | Date): string {
 }
 
 /**
- * Kunci tanggal "YYYY-MM-DD" di zona Asia/Jakarta — dipakai sebagai key
+ * Kunci tanggal "YYYY-MM-DD" di zona Asia/Jakarta: dipakai sebagai key
  * map saat mengelompokkan slot per hari.
  *
- * Penting: jangan pakai `value.toISOString().slice(0, 10)` — itu UTC dan
+ * Penting: jangan pakai `value.toISOString().slice(0, 10)`: itu UTC dan
  * bisa salah tanggal di sekitar tengah malam WIB.
  */
 export function jakartaDateKey(value: string | Date): string {
@@ -118,8 +118,8 @@ export function jakartaDateKey(value: string | Date): string {
  * @returns true kalau keduanya jatuh di tanggal WIB yang sama
  *
  * Contoh:
- * - "2026-09-10T17:00:00Z" (11 Sep 00:00 WIB) dan "2026-09-11T09:00:00Z" (11 Sep 09:00 WIB) → true
- * - "2026-09-10T16:00:00Z" (10 Sep 23:00 WIB) dan "2026-09-11T01:00:00Z" (11 Sep 08:00 WIB) → false
+ * - "2026-09-10T17:00:00Z" (11 Sep 00:00 WIB) dan "2026-09-11T09:00:00Z" (11 Sep 09:00 WIB) -> true
+ * - "2026-09-10T16:00:00Z" (10 Sep 23:00 WIB) dan "2026-09-11T01:00:00Z" (11 Sep 08:00 WIB) -> false
  */
 export function isSameJakartaDay(a: string | Date, b: string | Date): boolean {
   return jakartaDateKey(a) === jakartaDateKey(b);
@@ -127,7 +127,7 @@ export function isSameJakartaDay(a: string | Date, b: string | Date): boolean {
 export function startOfWeekJakarta(reference: string | Date = new Date()): Date {
   // Strategi: bangun wall-time Senin di zona Jakarta sebagai string ISO,
   // lalu konversi ke Date UTC via fromZonedTime. Hasilnya selalu titik
-  // waktu 00:00 WIB hari Senin yang dimaksud — tanpa peduli zona lokal.
+  // waktu 00:00 WIB hari Senin yang dimaksud: tanpa peduli zona lokal.
   const dateKey = jakartaDateKey(reference); // YYYY-MM-DD di Jakarta
   const isoDay = isoWeekdayJakarta(reference); // 1=Senin .. 7=Minggu
   const [year, month, day] = dateKey.split("-").map(Number);
@@ -158,7 +158,7 @@ export function weekRangeJakarta(reference: string | Date = new Date()): {
 }
 
 /**
- * Label minggu kalender: "7–13 September 2026" (Senin..Minggu bulan sama).
+ * Label minggu kalender: "7-13 September 2026" (Senin..Minggu bulan sama).
  * Dipakai untuk header kalender.
  */
 export function formatWeekRangeLabel(reference: string | Date = new Date()): string {
@@ -171,7 +171,7 @@ export function formatWeekRangeLabel(reference: string | Date = new Date()): str
   const sundayYear = formatInTimeZone(sunday, TIMEZONE, "yyyy");
 
   if (mondayMonth === sundayMonth && mondayYear === sundayYear) {
-    return `${formatInTimeZone(monday, TIMEZONE, "d")}–${formatInTimeZone(
+    return `${formatInTimeZone(monday, TIMEZONE, "d")}-${formatInTimeZone(
       sunday,
       TIMEZONE,
       "d MMMM yyyy",
@@ -181,13 +181,13 @@ export function formatWeekRangeLabel(reference: string | Date = new Date()): str
   if (mondayYear === sundayYear) {
     return `${formatInTimeZone(monday, TIMEZONE, "d MMMM", {
       locale: localeId,
-    })} – ${formatInTimeZone(sunday, TIMEZONE, "d MMMM yyyy", {
+    })} - ${formatInTimeZone(sunday, TIMEZONE, "d MMMM yyyy", {
       locale: localeId,
     })}`;
   }
   return `${formatInTimeZone(monday, TIMEZONE, "d MMMM yyyy", {
     locale: localeId,
-  })} – ${formatInTimeZone(sunday, TIMEZONE, "d MMMM yyyy", {
+  })} - ${formatInTimeZone(sunday, TIMEZONE, "d MMMM yyyy", {
     locale: localeId,
   })}`;
 }
@@ -205,7 +205,7 @@ export function isBeforeThisWeekJakarta(reference: string | Date): boolean {
 
 /**
  * Kelompokkan daftar slot ke peta per tanggal Asia/Jakarta.
- * Backend mengirim slot dalam UTC — kalau dikelompokkan dengan
+ * Backend mengirim slot dalam UTC: kalau dikelompokkan dengan
  * `slot.start_at.slice(0,10)` kita akan salah satu hari di sekitar
  * tengah malam WIB. Lewat jakartaDateKey() supaya konsisten dengan
  * kalender yang ditampilkan.

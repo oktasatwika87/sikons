@@ -293,7 +293,7 @@ function BookingCard({ booking, onComplete, onNoShow, upcoming = false }: Bookin
             <CardTitle className="text-base">{booking.topic}</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
               {formatJakartaLongDate(booking.slot.start_at)} ·{" "}
-              {formatJakartaTime(booking.slot.start_at)}–
+              {formatJakartaTime(booking.slot.start_at)}-
               {formatJakartaTime(booking.slot.end_at)}
             </p>
             {booking.student && (
