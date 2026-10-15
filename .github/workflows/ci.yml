@@ -349,3 +349,28 @@ jobs:
             exit 1
           fi
           echo "Tidak ada aksara non-Latin / emoji."
+
+      # Cegah karakter Unicode yang tidak perlu: em-dash, en-dash, panah,
+      # box-drawing. Bahasa Indonesia dan Inggris tidak butuh semuanya.
+      # em-dash (U+2014) dan en-dash (U+2013) diganti dengan koma, titik dua,
+      # atau tanda kurung; panah (U+2190..U+21FF) jadi "->" di kode dan
+      # "lalu"/"ke" di prosa; box-drawing (U+2500..U+257F) dipakai cuma untuk
+      # dekorasi, bukan untuk isi.
+      - name: forbidden-unicode-punctuation-check
+        run: |
+          POLA='[\x{2013}\x{2014}\x{2190}-\x{21ff}\x{2500}-\x{257f}]'
+          # Uji mandiri: tiga karakter contoh (em-dash, panah kanan, box-drawing)
+          # harus dikenali. Kalau salah satu lolos, pemindai tidak bisa dipercaya.
+          for CO in $'\xe2\x80\x94' $'\xe2\x86\x92' $'\xe2\x94\x80'; do
+            if ! printf '%s\n' "$CO" | perl -CSD -ne "exit 1 unless /$POLA/"; then
+              echo "Pemindai gagal mengenali karakter uji, hasil scan tidak bisa dipercaya."
+              exit 1
+            fi
+          done
+          ASING=$(git grep -I -z -l -e '' -- . | xargs -0 perl -CSD -ne "print \"\$ARGV:\$.: \$_\" if /$POLA/; close ARGV if eof")
+          if [ -n "$ASING" ]; then
+            echo "Ditemukan em-dash/en-dash/panah/box-drawing di file:"
+            echo "$ASING" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "Tidak ada em-dash/en-dash/panah/box-drawing."
