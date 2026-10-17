@@ -352,27 +352,41 @@ jobs:
           fi
           echo "Tidak ada aksara non-Latin / emoji."
 
-      # Cegah karakter Unicode yang tidak perlu: em-dash, en-dash, panah,
-      # box-drawing. Bahasa Indonesia dan Inggris tidak butuh semuanya.
-      # em-dash (U+2014) dan en-dash (U+2013) diganti dengan koma, titik dua,
-      # atau tanda kurung; panah (U+2190..U+21FF) jadi "->" di kode dan
-      # "lalu"/"ke" di prosa; box-drawing (U+2500..U+257F) dipakai cuma untuk
-      # dekorasi, bukan untuk isi.
+      # Cegah karakter Unicode yang tidak perlu: tanda pisah, panah, dan
+      # garis kotak/blok. Bahasa Indonesia dan Inggris tidak butuh semuanya.
+      # Tanda pisah (U+2010..U+2015, U+2212) diganti dengan koma, titik dua,
+      # atau tanda kurung; panah (U+2190..U+21FF, U+27F0..U+27FF,
+      # U+2900..U+297F) jadi "->" di kode dan "lalu"/"ke" di prosa;
+      # box-drawing (U+2500..U+259F) dipakai cuma untuk dekorasi, bukan isi.
+      #
+      # Pola ini disamakan dengan yang ada di .git/hooks/pre-commit langkah
+      # 3: satu sumber untuk lokal dan CI. Tes mandiri dengan tiga karakter
+      # contoh memastikan regex tidak bisu (no false negative).
+      #
+      # Locale independence: perl dipanggil dengan `-CSD` (skrip dan stream
+      # perl di-UTF-8) dan env locale di-set `C.UTF-8` di level step,
+      # sehingga pola berbasis codepoint bekerja identik di runner Ubuntu
+      # dan di macOS.
       - name: forbidden-unicode-punctuation-check
+        env:
+          LC_ALL: C.UTF-8
+          LANG: C.UTF-8
         run: |
-          POLA='[\x{2013}\x{2014}\x{2190}-\x{21ff}\x{2500}-\x{257f}]'
+          POLA='[\x{2010}-\x{2015}\x{2212}\x{2190}-\x{21ff}\x{27f0}-\x{27ff}\x{2900}-\x{297f}\x{2500}-\x{259f}]'
           # Uji mandiri: tiga karakter contoh (em-dash, panah kanan, box-drawing)
           # harus dikenali. Kalau salah satu lolos, pemindai tidak bisa dipercaya.
           for CO in $'\xe2\x80\x94' $'\xe2\x86\x92' $'\xe2\x94\x80'; do
-            if ! printf '%s\n' "$CO" | perl -CSD -ne "exit 1 unless /$POLA/"; then
+            if ! printf '%s\n' "$CO" | LC_ALL=C.UTF-8 perl -CSD -ne "exit 1 unless /$POLA/"; then
               echo "Pemindai gagal mengenali karakter uji, hasil scan tidak bisa dipercaya."
               exit 1
             fi
           done
-          ASING=$(git grep -I -z -l -e '' -- . | xargs -0 perl -CSD -ne "print \"\$ARGV:\$.: \$_\" if /$POLA/; close ARGV if eof")
+          # Daftar file teks yang di-track (biner dilewati), lalu pindai
+          # lewat perl dalam subshell agar LC_ALL diwariskan ke xargs.
+          ASING=$(git grep -I -z -l -e '' -- . | (LC_ALL=C.UTF-8 xargs -0 perl -CSD -ne "print \"\$ARGV:\$.: \$_\" if /$POLA/; close ARGV if eof"))
           if [ -n "$ASING" ]; then
-            echo "Ditemukan em-dash/en-dash/panah/box-drawing di file:"
+            echo "Ditemukan karakter terlarang (tanda pisah/panah/garis kotak) di file:"
             echo "$ASING" | sed 's/^/  /'
             exit 1
           fi
-          echo "Tidak ada em-dash/en-dash/panah/box-drawing."
+          echo "Tidak ada karakter terlarang."
