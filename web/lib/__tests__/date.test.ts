@@ -133,9 +133,9 @@ describe("lib/date: konversi zona Asia/Jakarta", () => {
   });
 
   it("formatWeekRangeLabel menulis rentang dalam Bahasa Indonesia", () => {
-    // 7 - 13 September 2026 (Senin..Minggu bulan sama).
+    // 7 - 13 Sep 2026 (Senin..Minggu bulan sama).
     expect(formatWeekRangeLabel("2026-09-10T08:00:00+07:00")).toBe(
-      "7 - 13 September 2026"
+      "7 - 13 Sep 2026"
     );
   });
 
@@ -154,11 +154,11 @@ describe("lib/date: konversi zona Asia/Jakarta", () => {
     ).toBe("00:00 - 01:00");
   });
 
-  it("formatDateRange bulan sama -> 'd - d MMMM yyyy'", () => {
-    // 7 - 13 September 2026 (Senin..Minggu bulan sama, tahun sama).
+  it("formatDateRange bulan sama -> 'd - d MMM yyyy'", () => {
+    // 7 - 13 Sep 2026 (Senin..Minggu bulan sama, tahun sama).
     expect(
       formatDateRange("2026-09-07T00:00:00+07:00", "2026-09-13T00:00:00+07:00")
-    ).toBe("7 - 13 September 2026");
+    ).toBe("7 - 13 Sep 2026");
   });
 
   it("formatDateRange bulan beda, tahun sama -> 'd MMM - d MMM yyyy'", () => {
@@ -168,11 +168,11 @@ describe("lib/date: konversi zona Asia/Jakarta", () => {
     ).toBe("28 Okt - 3 Nov 2026");
   });
 
-  it("formatDateRange tahun beda -> 'd MMMM yyyy - d MMMM yyyy'", () => {
+  it("formatDateRange tahun beda -> 'd MMM yyyy - d MMM yyyy'", () => {
     // 28 Des 2026 - 3 Jan 2027.
     expect(
       formatDateRange("2026-12-28T00:00:00+07:00", "2027-01-03T00:00:00+07:00")
-    ).toBe("28 Desember 2026 - 3 Januari 2027");
+    ).toBe("28 Des 2026 - 3 Jan 2027");
   });
 
   it("formatDateRange mengikuti kalender WIB walau UTC beda tanggal", () => {
@@ -181,7 +181,36 @@ describe("lib/date: konversi zona Asia/Jakarta", () => {
     // Kalau pakai UTC, tanggal jadi 6 - 12 September, bukan 7 - 13.
     expect(
       formatDateRange("2026-09-06T17:00:00Z", "2026-09-12T17:00:00Z")
-    ).toBe("7 - 13 September 2026");
+    ).toBe("7 - 13 Sep 2026");
+  });
+
+  it("formatDateRange Agustus memakai singkatan date-fns id ('Agt')", () => {
+    // 3 - 9 Agt 2026 (Senin..Minggu bulan sama, Agustus).
+    // Asal singkatan: locale 'id' dari date-fns, lihat
+    // web/node_modules/date-fns/locale/id/_lib/localize.js (Agustus -> "Agt").
+    // 'Agt' di sini konsisten dengan formatJakartaShortDate untuk Agustus
+    // (juga "10 Agt"), sehingga label minggu tidak berbeda gaya dengan
+    // header kolom kalender.
+    expect(
+      formatDateRange("2026-08-03T00:00:00+07:00", "2026-08-09T00:00:00+07:00")
+    ).toBe("3 - 9 Agt 2026");
+  });
+
+  it("formatDateRange Agustus beda bulan -> 'Agt' dan 'Sep'", () => {
+    // 27 Agt - 2 Sep 2026 (Minggu sebelumnya - Senin berikutnya).
+    expect(
+      formatDateRange("2026-08-27T00:00:00+07:00", "2026-09-02T00:00:00+07:00")
+    ).toBe("27 Agt - 2 Sep 2026");
+  });
+
+  it("formatDateRange start = end tetap menulis 'd - d MMM yyyy'", () => {
+    // Tanggal awal dan akhir sama persis: pola tidak berubah dari
+    // kasus bulan sama, hanya day start dan day end yang sama. Catatan:
+    // ini adalah perilaku yang sudah ada sebelum M7b3 (saat masih MMMM);
+    // dengan perubahan M7b3 diseragamkan ke MMM, hasilnya "7 - 7 Sep 2026".
+    expect(
+      formatDateRange("2026-09-07T00:00:00+07:00", "2026-09-07T00:00:00+07:00")
+    ).toBe("7 - 7 Sep 2026");
   });
 
   it("formatJakartaLongDate menggunakan locale Indonesia", () => {

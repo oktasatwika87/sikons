@@ -158,7 +158,7 @@ export function weekRangeJakarta(reference: string | Date = new Date()): {
 }
 
 /**
- * Label minggu kalender: "7 - 13 September 2026" (Senin..Minggu bulan sama).
+ * Label minggu kalender: "7 - 13 Sep 2026" (Senin..Minggu bulan sama).
  * Dipakai untuk header kalender.
  */
 export function formatWeekRangeLabel(reference: string | Date = new Date()): string {
@@ -187,10 +187,12 @@ export function formatTimeRange(start: string | Date, end: string | Date): strin
  * Zona tampilan Asia/Jakarta: walau start dan end adalah Instant UTC, hari
  * yang dipakai untuk pengelompokan berasal dari kalender WIB.
  *
- * Bentuk keluaran:
- *   bulan sama, tahun sama        -> "12 - 18 Okt 2026"
+ * Bentuk keluaran (semua memakai nama bulan singkat `MMM`):
+ *   bulan sama, tahun sama        -> "7 - 13 Sep 2026"
  *   bulan beda, tahun sama        -> "28 Okt - 3 Nov 2026"
  *   tahun beda                    -> "28 Des 2026 - 3 Jan 2027"
+ *
+ * Catatan: bulan sama, tahun sama, hari sama (start = end) -> "7 - 7 Sep 2026".
  */
 export function formatDateRange(
   start: string | Date,
@@ -203,7 +205,7 @@ export function formatDateRange(
 
   if (sy === ey && sm === em) {
     const day = formatInTimeZone(parseRFC3339(start), TIMEZONE, "d");
-    const rest = formatInTimeZone(parseRFC3339(end), TIMEZONE, "d MMMM yyyy", {
+    const rest = formatInTimeZone(parseRFC3339(end), TIMEZONE, "d MMM yyyy", {
       locale: localeId,
     });
     return `${day}${RANGE_SEPARATOR}${rest}`;
@@ -217,10 +219,10 @@ export function formatDateRange(
     });
     return `${left}${RANGE_SEPARATOR}${right}`;
   }
-  const left = formatInTimeZone(parseRFC3339(start), TIMEZONE, "d MMMM yyyy", {
+  const left = formatInTimeZone(parseRFC3339(start), TIMEZONE, "d MMM yyyy", {
     locale: localeId,
   });
-  const right = formatInTimeZone(parseRFC3339(end), TIMEZONE, "d MMMM yyyy", {
+  const right = formatInTimeZone(parseRFC3339(end), TIMEZONE, "d MMM yyyy", {
     locale: localeId,
   });
   return `${left}${RANGE_SEPARATOR}${right}`;
