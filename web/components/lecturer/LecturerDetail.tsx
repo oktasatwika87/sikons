@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   formatJakartaShortDate,
-  formatJakartaTime,
+  formatTimeRange,
   formatWeekRangeLabel,
   groupSlotsByJakartaDate,
   isBeforeThisWeekJakarta,
@@ -270,8 +270,7 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
                                     : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 cursor-pointer")
                                 }
                               >
-                                {formatJakartaTime(slot.start_at)}-
-                                {formatJakartaTime(slot.end_at)}
+                                {formatTimeRange(slot.start_at, slot.end_at)}
                               </button>
                             );
                           })
@@ -327,7 +326,7 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
                                     : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 cursor-pointer")
                                 }
                               >
-                                {formatJakartaTime(slot.start_at)}-{formatJakartaTime(slot.end_at)}
+                                {formatTimeRange(slot.start_at, slot.end_at)}
                               </button>
                             );
                           })}

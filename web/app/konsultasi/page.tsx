@@ -7,7 +7,7 @@ import { useCancelBooking } from "@/hooks/useCancelBooking";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { isBookingCancelable, bookingStatusLabel, bookingStatusClass } from "@/lib/booking";
-import { formatJakartaLongDate, formatJakartaTime } from "@/lib/date";
+import { formatJakartaLongDate, formatTimeRange } from "@/lib/date";
 import type { BookingListResponse, BookingResponse } from "@/lib/api/types";
 import {
   Card,
@@ -241,8 +241,7 @@ function KonsultasiCard({ booking, isStudent, onCancel }: KonsultasiCardProps) {
       <CardContent>
         <p className="text-sm text-muted-foreground">
           {formatJakartaLongDate(booking.slot.start_at)} ·{" "}
-          {formatJakartaTime(booking.slot.start_at)}-
-          {formatJakartaTime(booking.slot.end_at)}
+          {formatTimeRange(booking.slot.start_at, booking.slot.end_at)}
         </p>
         {booking.description && (
           <p className="mt-2 text-sm text-muted-foreground line-clamp-2">
@@ -319,7 +318,7 @@ function KonsultasiRow({ booking, isStudent, onCancel }: KonsultasiRowProps) {
       <td className="py-3 pr-4 whitespace-nowrap">
         <div>{formatJakartaLongDate(booking.slot.start_at)}</div>
         <div className="text-xs text-muted-foreground">
-          {formatJakartaTime(booking.slot.start_at)}-{formatJakartaTime(booking.slot.end_at)}
+          {formatTimeRange(booking.slot.start_at, booking.slot.end_at)}
         </div>
       </td>
       <td className="py-3 pr-4">

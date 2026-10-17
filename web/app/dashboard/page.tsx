@@ -10,7 +10,7 @@ import {
   groupDashboardBookings,
   isSessionActionable,
 } from "@/lib/booking";
-import { formatJakartaLongDate, formatJakartaTime } from "@/lib/date";
+import { formatJakartaLongDate, formatTimeRange } from "@/lib/date";
 import type { BookingListResponse, BookingResponse } from "@/lib/api/types";
 import { z } from "zod";
 import {
@@ -293,8 +293,7 @@ function BookingCard({ booking, onComplete, onNoShow, upcoming = false }: Bookin
             <CardTitle className="text-base">{booking.topic}</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
               {formatJakartaLongDate(booking.slot.start_at)} ·{" "}
-              {formatJakartaTime(booking.slot.start_at)}-
-              {formatJakartaTime(booking.slot.end_at)}
+              {formatTimeRange(booking.slot.start_at, booking.slot.end_at)}
             </p>
             {booking.student && (
               <p className="mt-1 text-sm text-muted-foreground">

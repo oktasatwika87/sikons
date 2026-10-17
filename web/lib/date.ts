@@ -158,38 +158,72 @@ export function weekRangeJakarta(reference: string | Date = new Date()): {
 }
 
 /**
- * Label minggu kalender: "7-13 September 2026" (Senin..Minggu bulan sama).
+ * Label minggu kalender: "7 - 13 September 2026" (Senin..Minggu bulan sama).
  * Dipakai untuk header kalender.
  */
 export function formatWeekRangeLabel(reference: string | Date = new Date()): string {
   const monday = startOfWeekJakarta(reference);
   const sunday = new Date(monday.getTime() + 6 * 24 * 60 * 60 * 1000);
-  // Pakai formatInTimeZone untuk kedua titik supaya konsisten zona Jakarta.
-  const mondayMonth = formatInTimeZone(monday, TIMEZONE, "M");
-  const sundayMonth = formatInTimeZone(sunday, TIMEZONE, "M");
-  const mondayYear = formatInTimeZone(monday, TIMEZONE, "yyyy");
-  const sundayYear = formatInTimeZone(sunday, TIMEZONE, "yyyy");
+  return formatDateRange(monday, sunday);
+}
 
-  if (mondayMonth === sundayMonth && mondayYear === sundayYear) {
-    return `${formatInTimeZone(monday, TIMEZONE, "d")}-${formatInTimeZone(
-      sunday,
-      TIMEZONE,
-      "d MMMM yyyy",
-      { locale: localeId }
-    )}`;
-  }
-  if (mondayYear === sundayYear) {
-    return `${formatInTimeZone(monday, TIMEZONE, "d MMMM", {
+/**
+ * Pemisah universal untuk teks rentang: spasi, tanda hubung ASCII, spasi.
+ * Dipakai untuk rentang jam, tanggal, dan hari di semua teks yang dilihat
+ * pengguna. Tunggal: lihat RINGKASAN-M7B3 keputusan 1c.
+ */
+export const RANGE_SEPARATOR = " - ";
+
+/**
+ * Bangun teks rentang jam "09.00 - 09.30" (atau "HH:mm" di zona Jakarta).
+ * Zona tampilan Asia/Jakarta, konsisten dengan formatJakartaTime.
+ */
+export function formatTimeRange(start: string | Date, end: string | Date): string {
+  return `${formatJakartaTime(start)}${RANGE_SEPARATOR}${formatJakartaTime(end)}`;
+}
+
+/**
+ * Bangun teks rentang tanggal dalam Bahasa Indonesia, dipisah RANGE_SEPARATOR.
+ * Zona tampilan Asia/Jakarta: walau start dan end adalah Instant UTC, hari
+ * yang dipakai untuk pengelompokan berasal dari kalender WIB.
+ *
+ * Bentuk keluaran:
+ *   bulan sama, tahun sama        -> "12 - 18 Okt 2026"
+ *   bulan beda, tahun sama        -> "28 Okt - 3 Nov 2026"
+ *   tahun beda                    -> "28 Des 2026 - 3 Jan 2027"
+ */
+export function formatDateRange(
+  start: string | Date,
+  end: string | Date
+): string {
+  const startKey = jakartaDateKey(start);
+  const endKey = jakartaDateKey(end);
+  const [sy, sm] = startKey.split("-").map(Number);
+  const [ey, em] = endKey.split("-").map(Number);
+
+  if (sy === ey && sm === em) {
+    const day = formatInTimeZone(parseRFC3339(start), TIMEZONE, "d");
+    const rest = formatInTimeZone(parseRFC3339(end), TIMEZONE, "d MMMM yyyy", {
       locale: localeId,
-    })} - ${formatInTimeZone(sunday, TIMEZONE, "d MMMM yyyy", {
-      locale: localeId,
-    })}`;
+    });
+    return `${day}${RANGE_SEPARATOR}${rest}`;
   }
-  return `${formatInTimeZone(monday, TIMEZONE, "d MMMM yyyy", {
+  if (sy === ey) {
+    const left = formatInTimeZone(parseRFC3339(start), TIMEZONE, "d MMM", {
+      locale: localeId,
+    });
+    const right = formatInTimeZone(parseRFC3339(end), TIMEZONE, "d MMM yyyy", {
+      locale: localeId,
+    });
+    return `${left}${RANGE_SEPARATOR}${right}`;
+  }
+  const left = formatInTimeZone(parseRFC3339(start), TIMEZONE, "d MMMM yyyy", {
     locale: localeId,
-  })} - ${formatInTimeZone(sunday, TIMEZONE, "d MMMM yyyy", {
+  });
+  const right = formatInTimeZone(parseRFC3339(end), TIMEZONE, "d MMMM yyyy", {
     locale: localeId,
-  })}`;
+  });
+  return `${left}${RANGE_SEPARATOR}${right}`;
 }
 
 /**

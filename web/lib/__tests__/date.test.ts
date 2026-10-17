@@ -20,6 +20,8 @@ import {
   weekDayHeaders,
   weekDaysJakarta,
   formatWeekRangeLabel,
+  formatTimeRange,
+  formatDateRange,
   isSameJakartaDay,
 } from "@/lib/date";
 
@@ -131,10 +133,55 @@ describe("lib/date: konversi zona Asia/Jakarta", () => {
   });
 
   it("formatWeekRangeLabel menulis rentang dalam Bahasa Indonesia", () => {
-    // 7-13 September 2026 (Senin..Minggu bulan sama).
+    // 7 - 13 September 2026 (Senin..Minggu bulan sama).
     expect(formatWeekRangeLabel("2026-09-10T08:00:00+07:00")).toBe(
-      "7-13 September 2026"
+      "7 - 13 September 2026"
     );
+  });
+
+  it("formatTimeRange menulis 'HH:mm - HH:mm' di zona Jakarta", () => {
+    // 09.00 - 09.30 WIB.
+    expect(
+      formatTimeRange("2026-09-11T09:00:00+07:00", "2026-09-11T09:30:00+07:00")
+    ).toBe("09:00 - 09:30");
+  });
+
+  it("formatTimeRange menghormati zona Jakarta saat UTC beda hari", () => {
+    // 17:00 UTC tanggal 10 -> 00:00 WIB tanggal 11.
+    // 18:00 UTC tanggal 10 -> 01:00 WIB tanggal 11.
+    expect(
+      formatTimeRange("2026-09-10T17:00:00Z", "2026-09-10T18:00:00Z")
+    ).toBe("00:00 - 01:00");
+  });
+
+  it("formatDateRange bulan sama -> 'd - d MMMM yyyy'", () => {
+    // 7 - 13 September 2026 (Senin..Minggu bulan sama, tahun sama).
+    expect(
+      formatDateRange("2026-09-07T00:00:00+07:00", "2026-09-13T00:00:00+07:00")
+    ).toBe("7 - 13 September 2026");
+  });
+
+  it("formatDateRange bulan beda, tahun sama -> 'd MMM - d MMM yyyy'", () => {
+    // 28 Okt - 3 Nov 2026.
+    expect(
+      formatDateRange("2026-10-28T00:00:00+07:00", "2026-11-03T00:00:00+07:00")
+    ).toBe("28 Okt - 3 Nov 2026");
+  });
+
+  it("formatDateRange tahun beda -> 'd MMMM yyyy - d MMMM yyyy'", () => {
+    // 28 Des 2026 - 3 Jan 2027.
+    expect(
+      formatDateRange("2026-12-28T00:00:00+07:00", "2027-01-03T00:00:00+07:00")
+    ).toBe("28 Desember 2026 - 3 Januari 2027");
+  });
+
+  it("formatDateRange mengikuti kalender WIB walau UTC beda tanggal", () => {
+    // Senin 7 Sep 2026 00:00 WIB = 2026-09-06T17:00:00Z.
+    // Minggu 13 Sep 2026 00:00 WIB = 2026-09-12T17:00:00Z.
+    // Kalau pakai UTC, tanggal jadi 6 - 12 September, bukan 7 - 13.
+    expect(
+      formatDateRange("2026-09-06T17:00:00Z", "2026-09-12T17:00:00Z")
+    ).toBe("7 - 13 September 2026");
   });
 
   it("formatJakartaLongDate menggunakan locale Indonesia", () => {

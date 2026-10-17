@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useCreateBooking } from "@/hooks/useCreateBooking";
 import type { Slot } from "@/lib/api/types";
-import { formatJakartaLongDate, formatJakartaTime } from "@/lib/date";
+import { formatJakartaLongDate, formatTimeRange } from "@/lib/date";
 import {
   Dialog,
   DialogHeader,
@@ -106,7 +106,7 @@ export function BookingDialog({
               {slot && (
                 <>
                   {formatJakartaLongDate(slot.start_at)} ·{" "}
-                  {formatJakartaTime(slot.start_at)}-{formatJakartaTime(slot.end_at)}
+                  {formatTimeRange(slot.start_at, slot.end_at)}
                   <br />
                   dengan {lecturerName}
                 </>

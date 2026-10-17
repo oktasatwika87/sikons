@@ -5,6 +5,7 @@ import { useAvailabilityRules, useUpdateAvailabilityRule, useDeleteAvailabilityR
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/errors";
+import { RANGE_SEPARATOR } from "@/lib/date";
 import type { AvailabilityRule, SlotReconcileSummary } from "@/lib/api/types";
 
 interface RuleListProps {
@@ -22,13 +23,15 @@ const DAY_NAMES: Record<number, string> = {
 };
 
 function formatTimeRange(rule: AvailabilityRule): string {
-  return `${rule.start_time}-${rule.end_time}`;
+  // start_time/end_time aturan adalah string "HH:MM" (bukan RFC3339),
+  // tidak lewat zona Jakarta. Pemisah konsisten dengan teks rentang lain.
+  return `${rule.start_time}${RANGE_SEPARATOR}${rule.end_time}`;
 }
 
 function formatEffectiveDate(effectiveFrom: string, effectiveTo?: string): string {
   const from = formatDate(effectiveFrom);
   if (!effectiveTo) return `dari ${from}`;
-  return `${from} - ${formatDate(effectiveTo)}`;
+  return `${from}${RANGE_SEPARATOR}${formatDate(effectiveTo)}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -220,10 +223,10 @@ function ConfirmRuleDialog({
       title={isEnd ? "Akhiri Aturan?" : "Hapus Aturan?"}
       description={
         isEnd
-          ? `Aksi ini akan mengakhiri jadwal ${DAY_NAMES[rule.day_of_week]} ${rule.start_time}-${rule.end_time} mulai hari ini (${formatDate(today)}). ` +
+          ? `Aksi ini akan mengakhiri jadwal ${DAY_NAMES[rule.day_of_week]} ${formatTimeRange(rule)} mulai hari ini (${formatDate(today)}). ` +
             `Slot yang sudah dibuat dari aturan ini akan diproses ulang. ` +
             `Tindakan ini bisa membatalkan booking yang sudah ada.`
-          : `Hapus jadwal ${DAY_NAMES[rule.day_of_week]} ${rule.start_time}-${rule.end_time}? ` +
+          : `Hapus jadwal ${DAY_NAMES[rule.day_of_week]} ${formatTimeRange(rule)}? ` +
             `Slot yang dibuat dari aturan ini akan diproses ulang. ` +
             `Tindakan ini bisa membatalkan booking yang sudah ada.`
       }

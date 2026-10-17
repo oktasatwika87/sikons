@@ -160,7 +160,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
       {/* Preview slot count */}
       {parsed.success && slotCount > 0 && (
         <p className="text-sm text-muted-foreground">
-          {form.start_time}-{form.end_time}, sesi {form.slot_duration_min} menit {"->"}{" "}
+          {form.start_time} - {form.end_time}, sesi {form.slot_duration_min} menit {"->"}{" "}
           <strong>{slotCount} slot</strong> per{" "}
           {DAY_OPTIONS.find((d) => d.value === form.day_of_week)?.label}
         </p>

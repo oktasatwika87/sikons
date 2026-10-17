@@ -14,7 +14,7 @@ import { setupServer } from "msw/node";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { LecturerDetail } from "@/components/lecturer/LecturerDetail";
-import { formatJakartaTime, startOfWeekJakarta } from "@/lib/date";
+import { formatTimeRange, startOfWeekJakarta } from "@/lib/date";
 import { sessionHandlers } from "@/lib/msw/session";
 
 const BASE_URL = "http://localhost:8080/api/v1";
@@ -139,7 +139,7 @@ describe("LecturerDetail: SLOT_ALREADY_BOOKED", () => {
     renderDetail(<LecturerDetail lecturerId="lecturer-1" />);
 
     const slot = slotMingguIni();
-    const label = `${formatJakartaTime(slot.start_at)}-${formatJakartaTime(slot.end_at)}`;
+    const label = formatTimeRange(slot.start_at, slot.end_at);
     // Slot dirender dua kali (grid desktop + daftar mobile), ambil salah satu.
     const slotButtons = await screen.findAllByRole("button", { name: label });
     await user.click(slotButtons[0]);
