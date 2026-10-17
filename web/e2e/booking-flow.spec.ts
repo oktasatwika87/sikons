@@ -163,8 +163,8 @@ test.describe.serial("alur konsultasi E2E", () => {
     });
     const startText = formatInTimeZone(slotStart, TIMEZONE, "HH:mm");
     const endText = formatInTimeZone(new Date(validSlot.end_at), TIMEZONE, "HH:mm");
-    // Hyphen-minus: sama dengan yang dipakai LecturerDetail.tsx.
-    const timeRange = `${startText}-${endText}`;
+    // Pemisah universal RANGE_SEPARATOR dari lib/date: " - " (ASCII).
+    const timeRange = `${startText} - ${endText}`;
 
     const dayDateEl = page.getByText(dayLabel, { exact: true }).first();
     await expect(dayDateEl, `header tanggal "${dayLabel}" minggu ini`).toBeVisible();
