@@ -5,23 +5,13 @@ import { useAvailabilityExceptions, useDeleteAvailabilityException } from "@/hoo
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/errors";
+import { formatJakartaDate, formatJakartaLongDate } from "@/lib/date";
 import type { AvailabilityException, SlotReconcileSummary } from "@/lib/api/types";
 
 interface ExceptionListProps {
   from: string;
   to: string;
   onSummary: (summary: SlotReconcileSummary) => void;
-}
-
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00Z");
-  return d.toLocaleDateString("id-ID", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
 }
 
 export function ExceptionList({ from, to, onSummary }: ExceptionListProps) {
@@ -70,7 +60,7 @@ export function ExceptionList({ from, to, onSummary }: ExceptionListProps) {
             className="flex items-start justify-between gap-4 rounded-lg border border-border px-4 py-3"
           >
             <div className="flex-1">
-              <p className="font-medium">{formatDate(exc.exception_date)}</p>
+              <p className="font-medium">{formatJakartaLongDate(exc.exception_date)}</p>
               <p className="mt-0.5 text-sm text-muted-foreground">{exc.reason}</p>
               {!exc.is_full_day && exc.start_time && exc.end_time && (
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -138,23 +128,13 @@ function ConfirmExceptionDialog({
   onConfirm,
   onCancel,
 }: ConfirmExceptionDialogProps) {
-  function formatDate(dateStr: string): string {
-    const d = new Date(dateStr + "T00:00:00Z");
-    return d.toLocaleDateString("id-ID", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      timeZone: "UTC",
-    });
-  }
-
   return (
     <AlertDialog
       open
       onOpenChange={(open) => !open && onCancel()}
       title="Hapus Pengecualian?"
       description={
-        `Hapus pengecualian pada ${formatDate(exception.exception_date)} "${exception.reason}"? ` +
+        `Hapus pengecualian pada ${formatJakartaDate(exception.exception_date)} "${exception.reason}"? ` +
         `Tindakan ini bisa membatalkan booking yang sudah ada.`
       }
       cancelText="Batal"

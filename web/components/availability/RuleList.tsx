@@ -5,7 +5,7 @@ import { useAvailabilityRules, useUpdateAvailabilityRule, useDeleteAvailabilityR
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/errors";
-import { RANGE_SEPARATOR } from "@/lib/date";
+import { formatDateRange, formatJakartaDate } from "@/lib/date";
 import type { AvailabilityRule, SlotReconcileSummary } from "@/lib/api/types";
 
 interface RuleListProps {
@@ -25,23 +25,12 @@ const DAY_NAMES: Record<number, string> = {
 function formatTimeRange(rule: AvailabilityRule): string {
   // start_time/end_time aturan adalah string "HH:MM" (bukan RFC3339),
   // tidak lewat zona Jakarta. Pemisah konsisten dengan teks rentang lain.
-  return `${rule.start_time}${RANGE_SEPARATOR}${rule.end_time}`;
+  return `${rule.start_time} - ${rule.end_time}`;
 }
 
 function formatEffectiveDate(effectiveFrom: string, effectiveTo?: string): string {
-  const from = formatDate(effectiveFrom);
-  if (!effectiveTo) return `dari ${from}`;
-  return `${from}${RANGE_SEPARATOR}${formatDate(effectiveTo)}`;
-}
-
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00Z");
-  return d.toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  if (!effectiveTo) return `dari ${formatJakartaDate(effectiveFrom)}`;
+  return formatDateRange(effectiveFrom, effectiveTo);
 }
 
 export function RuleList({ onSummary }: RuleListProps) {
@@ -223,7 +212,7 @@ function ConfirmRuleDialog({
       title={isEnd ? "Akhiri Aturan?" : "Hapus Aturan?"}
       description={
         isEnd
-          ? `Aksi ini akan mengakhiri jadwal ${DAY_NAMES[rule.day_of_week]} ${formatTimeRange(rule)} mulai hari ini (${formatDate(today)}). ` +
+          ? `Aksi ini akan mengakhiri jadwal ${DAY_NAMES[rule.day_of_week]} ${formatTimeRange(rule)} mulai hari ini (${formatJakartaDate(today)}). ` +
             `Slot yang sudah dibuat dari aturan ini akan diproses ulang. ` +
             `Tindakan ini bisa membatalkan booking yang sudah ada.`
           : `Hapus jadwal ${DAY_NAMES[rule.day_of_week]} ${formatTimeRange(rule)}? ` +

@@ -89,6 +89,22 @@ export function formatJakartaLongDate(value: string | Date): string {
 }
 
 /**
+ * Format tanggal sedang "14 Sep 2026" (hari + bulan singkat + tahun) di
+ * zona Asia/Jakarta: untuk label tanggal tunggal aturan ketersediaan
+ * dan pengecualian (mis. "berlaku dari 14 Sep 2026").
+ *
+ * Beda dari `formatJakartaLongDate` (panjang, dengan nama hari) dan dari
+ * `formatJakartaShortDate` (tanpa tahun). Sumber bulan singkat sama
+ * dengan `formatDateRange`, jadi tidak ada gaya Agustus berbeda antara
+ * label tunggal dan rentang.
+ */
+export function formatJakartaDate(value: string | Date): string {
+  return formatInTimeZone(parseRFC3339(value), TIMEZONE, "d MMM yyyy", {
+    locale: localeId,
+  });
+}
+
+/**
  * Nama hari "Senin" .. "Minggu" untuk header kolom kalender.
  * Input adalah Date UTC; output selalu nama hari di zona Asia/Jakarta.
  */
@@ -188,16 +204,22 @@ export function formatTimeRange(start: string | Date, end: string | Date): strin
  * yang dipakai untuk pengelompokan berasal dari kalender WIB.
  *
  * Bentuk keluaran (semua memakai nama bulan singkat `MMM`):
- *   bulan sama, tahun sama        -> "7 - 13 Sep 2026"
- *   bulan beda, tahun sama        -> "28 Okt - 3 Nov 2026"
- *   tahun beda                    -> "28 Des 2026 - 3 Jan 2027"
+ *   hari sama                       -> "7 Sep 2026"
+ *   bulan sama, tahun sama          -> "7 - 13 Sep 2026"
+ *   bulan beda, tahun sama          -> "28 Okt - 3 Nov 2026"
+ *   tahun beda                      -> "28 Des 2026 - 3 Jan 2027"
  *
- * Catatan: bulan sama, tahun sama, hari sama (start = end) -> "7 - 7 Sep 2026".
+ * Catatan: pembandingan "hari sama" memakai `isSameJakartaDay` sehingga
+ * konsisten dengan pengelompokan slot di kalender. Untuk start = end
+ * persis di tengah malam WIB, outputnya tunggal tanpa RANGE_SEPARATOR.
  */
 export function formatDateRange(
   start: string | Date,
   end: string | Date
 ): string {
+  if (isSameJakartaDay(start, end)) {
+    return formatJakartaDate(start);
+  }
   const startKey = jakartaDateKey(start);
   const endKey = jakartaDateKey(end);
   const [sy, sm] = startKey.split("-").map(Number);

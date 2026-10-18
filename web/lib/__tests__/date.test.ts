@@ -11,6 +11,7 @@ import {
   formatJakartaTime,
   formatJakartaLongDate,
   formatJakartaShortDate,
+  formatJakartaDate,
   jakartaDateKey,
   jakartaDayName,
   startOfWeekJakarta,
@@ -203,14 +204,21 @@ describe("lib/date: konversi zona Asia/Jakarta", () => {
     ).toBe("27 Agt - 2 Sep 2026");
   });
 
-  it("formatDateRange start = end tetap menulis 'd - d MMM yyyy'", () => {
-    // Tanggal awal dan akhir sama persis: pola tidak berubah dari
-    // kasus bulan sama, hanya day start dan day end yang sama. Catatan:
-    // ini adalah perilaku yang sudah ada sebelum M7b3 (saat masih MMMM);
-    // dengan perubahan M7b3 diseragamkan ke MMM, hasilnya "7 - 7 Sep 2026".
+  it("formatDateRange start = end menulis satu tanggal saja", () => {
+    // Tanggal awal dan akhir jatuh di hari Jakarta yang sama: hasilnya
+    // satu tanggal tanpa RANGE_SEPARATOR, bukan "7 - 7 Sep 2026".
     expect(
       formatDateRange("2026-09-07T00:00:00+07:00", "2026-09-07T00:00:00+07:00")
-    ).toBe("7 - 7 Sep 2026");
+    ).toBe("7 Sep 2026");
+  });
+
+  it("formatDateRange hari Jakarta sama walau UTC beda -> satu tanggal", () => {
+    // 2026-09-06T17:00:00Z = 7 Sep 00:00 WIB
+    // 2026-09-07T10:00:00Z = 7 Sep 17:00 WIB
+    // Keduanya di hari yang sama di kalender WIB.
+    expect(
+      formatDateRange("2026-09-06T17:00:00Z", "2026-09-07T10:00:00Z")
+    ).toBe("7 Sep 2026");
   });
 
   it("formatJakartaLongDate menggunakan locale Indonesia", () => {
@@ -225,6 +233,16 @@ describe("lib/date: konversi zona Asia/Jakarta", () => {
     expect(formatJakartaShortDate("2026-09-10T01:00:00Z")).toBe("10 Sep");
     // Batas hari: 17:00 UTC tanggal 10 -> 00:00 tanggal 11 WIB.
     expect(formatJakartaShortDate("2026-09-10T17:00:00Z")).toBe("11 Sep");
+  });
+
+  it("formatJakartaDate menulis 'd MMM yyyy' sesuai zona Jakarta", () => {
+    // 14 September 2026 WIB.
+    expect(formatJakartaDate("2026-09-14T00:00:00Z")).toBe("14 Sep 2026");
+    // 14 September 2026 09:00 WIB = 2026-09-14T02:00:00Z.
+    expect(formatJakartaDate("2026-09-14T02:00:00Z")).toBe("14 Sep 2026");
+    // Agustus memakai "Agt" (date-fns id), konsisten dengan
+    // formatDateRange dan formatJakartaShortDate.
+    expect(formatJakartaDate("2026-08-10T00:00:00Z")).toBe("10 Agt 2026");
   });
 });
 
