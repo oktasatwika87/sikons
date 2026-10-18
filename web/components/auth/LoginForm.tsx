@@ -66,7 +66,7 @@ export function LoginForm() {
       </CardHeader>
       <CardContent>
         {registered && (
-          <p className="mb-4 text-sm text-green-700 dark:text-green-400">
+          <p className="mb-4 text-sm text-status-completed-foreground">
             Registrasi berhasil, silakan masuk.
           </p>
         )}

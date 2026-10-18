@@ -56,10 +56,10 @@
   --color-status-cancelled-foreground: var(--status-cancelled-fg);
   --color-status-noshow: var(--status-noshow-bg);
   --color-status-noshow-foreground: var(--status-noshow-fg);
-  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-xl: calc(var(--radius) * 1.5);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
