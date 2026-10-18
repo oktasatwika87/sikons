@@ -191,11 +191,36 @@ export function formatWeekRangeLabel(reference: string | Date = new Date()): str
 export const RANGE_SEPARATOR = " - ";
 
 /**
- * Bangun teks rentang jam "09.00 - 09.30" (atau "HH:mm" di zona Jakarta).
+ * Bangun teks rentang jam "09:00 - 09:30" (atau "HH:mm" di zona Jakarta).
  * Zona tampilan Asia/Jakarta, konsisten dengan formatJakartaTime.
  */
 export function formatTimeRange(start: string | Date, end: string | Date): string {
   return `${formatJakartaTime(start)}${RANGE_SEPARATOR}${formatJakartaTime(end)}`;
+}
+
+/**
+ * Buang detik dari string jam: "HH:MM:SS" -> "HH:MM", "HH:MM" -> "HH:MM".
+ * Dipakai `formatWallClockTimeRange` agar tahan terhadap input yang
+ * kebetulan membawa detik (mis. nilai `type="time"` yang pernah diset
+ * lewat DOM dengan step lebih kecil dari 60). BUKAN untuk menormalkan
+ * jam tidak valid: string yang tidak punya bagian jam:menit dilewatkan
+ * apa adanya, dan validasi tetap tanggung jawab pemanggil.
+ */
+function trimWallClockSeconds(value: string): string {
+  return value.length >= 5 ? value.slice(0, 5) : value;
+}
+
+/**
+ * Bangun teks rentang jam "09:00 - 09:30" dari dua string jam "HH:MM"
+ * (wall clock, tanpa zona). Dipakai untuk aturan ketersediaan dan
+ * pengecualian yang menyimpan `start_time`/`end_time` sebagai string
+ * jam saja, bukan Instant RFC3339 seperti `formatTimeRange` di atas.
+ *
+ * Memakai `RANGE_SEPARATOR` ASCII dan membuang detik kalau ada,
+ * konsisten dengan formatter rentang lain di file ini.
+ */
+export function formatWallClockTimeRange(start: string, end: string): string {
+  return `${trimWallClockSeconds(start)}${RANGE_SEPARATOR}${trimWallClockSeconds(end)}`;
 }
 
 /**

@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api/errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatWallClockTimeRange } from "@/lib/date";
 import type { SlotReconcileSummary } from "@/lib/api/types";
 
 interface RuleFormProps {
@@ -160,7 +161,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
       {/* Preview slot count */}
       {parsed.success && slotCount > 0 && (
         <p className="text-sm text-muted-foreground">
-          {form.start_time} - {form.end_time}, sesi {form.slot_duration_min} menit {"->"}{" "}
+          {formatWallClockTimeRange(form.start_time, form.end_time)}, sesi {form.slot_duration_min} menit {"->"}{" "}
           <strong>{slotCount} slot</strong> per{" "}
           {DAY_OPTIONS.find((d) => d.value === form.day_of_week)?.label}
         </p>

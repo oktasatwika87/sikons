@@ -22,6 +22,7 @@ import {
   weekDaysJakarta,
   formatWeekRangeLabel,
   formatTimeRange,
+  formatWallClockTimeRange,
   formatDateRange,
   isSameJakartaDay,
 } from "@/lib/date";
@@ -153,6 +154,23 @@ describe("lib/date: konversi zona Asia/Jakarta", () => {
     expect(
       formatTimeRange("2026-09-10T17:00:00Z", "2026-09-10T18:00:00Z")
     ).toBe("00:00 - 01:00");
+  });
+
+  it("formatWallClockTimeRange menulis 'HH:MM - HH:MM' dari string jam", () => {
+    // Aturan ketersediaan: start_time/end_time adalah string "HH:MM",
+    // bukan Instant RFC3339. Tetapkan format konsisten dengan
+    // formatTimeRange: pakai RANGE_SEPARATOR ASCII.
+    expect(formatWallClockTimeRange("09:00", "12:30")).toBe("09:00 - 12:30");
+    expect(formatWallClockTimeRange("00:00", "23:59")).toBe("00:00 - 23:59");
+  });
+
+  it("formatWallClockTimeRange membuang detik kalau string membawa 'HH:MM:SS'", () => {
+    // Input type="time" di DOM dengan step < 60 bisa menghasilkan
+    // "HH:MM:SS". Tampilan harusnya tetap "HH:MM" (detik tidak
+    // relevan untuk jadwal konsultasi), dan RANGE_SEPARATOR tetap.
+    expect(formatWallClockTimeRange("09:00:00", "12:30:45")).toBe(
+      "09:00 - 12:30"
+    );
   });
 
   it("formatDateRange bulan sama -> 'd - d MMM yyyy'", () => {

@@ -5,7 +5,7 @@ import { useAvailabilityExceptions, useDeleteAvailabilityException } from "@/hoo
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/errors";
-import { formatJakartaDate, formatJakartaLongDate } from "@/lib/date";
+import { formatJakartaDate, formatJakartaLongDate, formatWallClockTimeRange } from "@/lib/date";
 import type { AvailabilityException, SlotReconcileSummary } from "@/lib/api/types";
 
 interface ExceptionListProps {
@@ -64,7 +64,7 @@ export function ExceptionList({ from, to, onSummary }: ExceptionListProps) {
               <p className="mt-0.5 text-sm text-muted-foreground">{exc.reason}</p>
               {!exc.is_full_day && exc.start_time && exc.end_time && (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {exc.start_time} - {exc.end_time}
+                  {formatWallClockTimeRange(exc.start_time, exc.end_time)}
                 </p>
               )}
               {exc.is_full_day && (
