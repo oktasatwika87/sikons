@@ -139,7 +139,7 @@ function DashboardContent() {
     return (
       <div className="container mx-auto max-w-4xl px-4 py-8">
         <h1 className="mb-6 text-2xl font-semibold">Dashboard</h1>
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-6 text-center text-sm text-destructive">
+        <div className="rounded-lg border border-destructive bg-destructive-muted px-4 py-6 text-center text-sm text-destructive">
           Gagal memuat daftar booking.
         </div>
       </div>
@@ -380,7 +380,7 @@ function CompleteDialog({
           </label>
           <textarea
             id="lecturer-note"
-            className="min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             placeholder="Catatan tentang sesi ini..."
             value={note}
             onChange={(e) => onNoteChange(e.target.value)}

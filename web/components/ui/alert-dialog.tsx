@@ -52,7 +52,7 @@ export function AlertDialog({
         {error && (
           <p
             role="alert"
-            className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+            className="mt-4 rounded-lg border border-destructive bg-destructive-muted px-4 py-3 text-sm text-destructive"
           >
             {error}
           </p>

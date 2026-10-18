@@ -39,6 +39,23 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Token tambahan desain UI (lihat :root untuk nilai). */
+  --color-primary-hover: var(--primary-hover);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-muted: var(--destructive-muted);
+  --color-faint: var(--text-faint);
+  --color-ink-pen: var(--ink-pen);
+  --color-highlight: var(--highlight);
+  --color-warning: var(--warning-bg);
+  --color-warning-foreground: var(--warning-fg);
+  --color-status-confirmed: var(--status-confirmed-bg);
+  --color-status-confirmed-foreground: var(--status-confirmed-fg);
+  --color-status-completed: var(--status-completed-bg);
+  --color-status-completed-foreground: var(--status-completed-fg);
+  --color-status-cancelled: var(--status-cancelled-bg);
+  --color-status-cancelled-foreground: var(--status-cancelled-fg);
+  --color-status-noshow: var(--status-noshow-bg);
+  --color-status-noshow-foreground: var(--status-noshow-fg);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -49,30 +66,32 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* Palet shadcn. */
+  --background: #F3F4F1;            /* kertas */
+  --foreground: #1E2124;            /* tinta */
+  --card: #FFFFFF;                  /* lembar */
+  --card-foreground: #1E2124;
+  --popover: #FFFFFF;
+  --popover-foreground: #1E2124;
+  --primary: #275A47;               /* papan */
+  --primary-foreground: #FFFFFF;
+  --secondary: #EEF0EC;             /* lembar 2 */
+  --secondary-foreground: #1E2124;
+  --muted: #EEF0EC;
+  --muted-foreground: #555B61;      /* tinta 2 */
+  --accent: #E2EEE8;                /* papan muda */
+  --accent-foreground: #1D4838;
+  --destructive: #A8322D;           /* bata */
+  --destructive-foreground: #FFFFFF;
+  --border: #D9DCD6;                /* garis pembatas */
+  --input: #878E87;                 /* tepi kontrol */
+  --ring: #275A47;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 0.5rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -81,6 +100,36 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Token tambahan untuk status, hover, dan aksen. */
+  --primary-hover: #1D4838;
+  --destructive-hover: #8A2621;
+  --destructive-muted: #F7E0DD;
+  --text-faint: #656B71;            /* placeholder */
+  --ink-pen: #1F3C9E;               /* paraf */
+  --highlight: #F5E36B;             /* stabilo */
+  --warning-bg: #F7EBB5;
+  --warning-fg: #6E5300;
+  --status-confirmed-bg: #D9E7F6;
+  --status-confirmed-fg: #1D4F86;
+  --status-completed-bg: #DCEFD6;
+  --status-completed-fg: #2A6131;
+  --status-cancelled-bg: #F6D9DD;
+  --status-cancelled-fg: #8E2A36;
+  --status-noshow-bg: #FADFCB;
+  --status-noshow-fg: #8A3D14;
+
+  /* Durasi dan kurva animasi. */
+  --dur-press: 90ms;
+  --dur-fast: 160ms;
+  --dur-base: 220ms;
+  --dur-move: 320ms;
+  --dur-story: 700ms;
+  --ease-enter: cubic-bezier(.2,.7,.2,1);
+  --ease-exit: cubic-bezier(.4,0,1,1);
+  --ease-sheet: cubic-bezier(.22,1,.36,1);
+  --ease-stamp: cubic-bezier(.25,1.15,.5,1);
+  --ease-write: cubic-bezier(.65,0,.35,1);
 }
 
 .dark {

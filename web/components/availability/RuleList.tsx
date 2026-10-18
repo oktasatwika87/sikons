@@ -75,7 +75,7 @@ export function RuleList({ onSummary }: RuleListProps) {
   return (
     <>
       {error && (
-        <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 rounded-lg border border-destructive bg-destructive-muted px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}

@@ -120,8 +120,8 @@ export function BookingDialog({
               <div
                 className={`rounded-lg border px-4 py-3 text-sm ${
                   error.type === "limit"
-                    ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
-                    : "border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+                    ? "border-warning bg-warning text-warning-foreground"
+                    : "border-destructive bg-destructive-muted text-destructive"
                 }`}
                 role="alert"
               >
@@ -171,7 +171,7 @@ export function BookingDialog({
                 placeholder="Opsional: jelaskan secara singkat apa yang ingin dibahas"
                 maxLength={2000}
                 rows={3}
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={isPending}
               />
               <p className="text-xs text-muted-foreground">

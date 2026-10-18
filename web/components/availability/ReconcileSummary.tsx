@@ -30,7 +30,7 @@ export function ReconcileSummary({ summary, onDismiss }: ReconcileSummaryProps) 
     <div
       className={`rounded-lg border p-4 ${
         summary.bookings_cancelled > 0
-          ? "border-destructive/50 bg-destructive/5"
+          ? "border-destructive bg-destructive-muted"
           : "border-border bg-muted/50"
       }`}
       role="status"

@@ -89,7 +89,7 @@ export function RuleForm({ onSuccess, onCancel }: RuleFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="rounded-lg border border-destructive bg-destructive-muted px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}

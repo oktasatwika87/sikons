@@ -127,18 +127,24 @@ export function bookingStatusLabel(status: string): string {
 
 /**
  * CSS class untuk badge status booking.
+ *
+ * Pemetaan ini cocok dengan token status di `web/app/globals.css`:
+ * - `confirmed` (terjadwal/akan datang) -> biru (status-confirmed)
+ * - `completed` (selesai) -> hijau (status-completed)
+ * - `cancelled` (dibatalkan) -> merah (status-cancelled)
+ * - `no_show` (tidak hadir) -> oranye (status-noshow)
  */
 export function bookingStatusClass(status: string): string {
   switch (status) {
     case "confirmed":
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+      return "bg-status-confirmed text-status-confirmed-foreground";
     case "cancelled":
-      return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200";
+      return "bg-status-cancelled text-status-cancelled-foreground";
     case "completed":
-      return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+      return "bg-status-completed text-status-completed-foreground";
     case "no_show":
-      return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
+      return "bg-status-noshow text-status-noshow-foreground";
     default:
-      return "bg-gray-100 text-gray-800";
+      return "bg-muted text-muted-foreground";
   }
 }

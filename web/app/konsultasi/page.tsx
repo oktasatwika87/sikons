@@ -108,7 +108,7 @@ function KonsultasiContent() {
 
       {/* Error state */}
       {bookingsQuery.isError && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-6 text-center text-sm text-destructive">
+        <div className="rounded-lg border border-destructive bg-destructive-muted px-4 py-6 text-center text-sm text-destructive">
           Gagal memuat riwayat konsultasi.
         </div>
       )}

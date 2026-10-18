@@ -115,7 +115,7 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
   if (lecturerQuery.isError) {
     return (
       <div className="container mx-auto max-w-4xl px-4 py-8">
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-6 text-center text-sm text-destructive">
+        <div className="rounded-lg border border-destructive bg-destructive-muted px-4 py-6 text-center text-sm text-destructive">
           {lecturerQuery.error instanceof Error
             ? lecturerQuery.error.message
             : "Gagal memuat data dosen."}
@@ -136,7 +136,7 @@ export function LecturerDetail({ lecturerId }: { lecturerId: string }) {
       {/* Banner untuk error SLOT_ALREADY_BOOKED */}
       {bookingError && (
         <div
-          className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+          className="mb-4 flex items-center justify-between rounded-lg border border-destructive bg-destructive-muted px-4 py-3 text-sm text-destructive"
           role="alert"
         >
           <span>{bookingError}</span>
