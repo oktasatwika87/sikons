@@ -12,6 +12,8 @@ import (
 
 // JendelaDefault menghitung rentang tanggal default untuk rekonsiliasi.
 // from = tengah malam hari ini di zona tz, to = from + horizonDays.
+// to adalah batas atas yang TIDAK termasuk: horizon 30 hari menutup
+// 30 hari penuh (hari ke-1 sampai hari ke-30), bukan 31 hari.
 func JendelaDefault(now time.Time, tz *time.Location, horizonDays int) (from, to time.Time) {
 	// Konversi ke zona kampus dulu, baru ambil komponen tanggal.
 	// Tanpa ini, midnight UTC bisa berbeda tanggal di zona kampus.
@@ -270,6 +272,8 @@ func terblokirOlehPengecualian(d time.Time, start, end time.Time, exList []excep
 }
 
 // computeShouldExist menghitung semua slot yang seharusnya ada.
+// to adalah batas atas (exclusive): hanya tanggal d dengan d < to yang
+// dihitung, jadi hari ke-N di luar horizon tidak ikut dibuat.
 // Algoritma:
 //  1. Untuk setiap tanggal dalam rentang, cari aturan yang berlaku hari itu
 //  2. Hitung slot: mulai dari start_time, selebar slot_duration_min
@@ -286,8 +290,9 @@ func (s *Service) computeShouldExist(from, to time.Time, rules []ruleRecord, exc
 
 	var slots []slotSpec
 
-	// Iterasi setiap tanggal
-	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+	// Iterasi setiap tanggal. to adalah batas atas eksklusif: hari ke-N
+	// sudah di luar horizon, jadi tidak boleh ikut digenerate.
+	for d := from; d.Before(to); d = d.AddDate(0, 0, 1) {
 		dateKey := d.Format("2006-01-02")
 		dow := int(d.Weekday()) // 0=Minggu, 6=Sabtu
 		exList := exByDate[dateKey]
@@ -357,6 +362,10 @@ func kunciSlot(t time.Time) int64 {
 func (s *Service) syncSlots(ctx context.Context, tx pgx.Tx, lecturerID string, from, to, nowUTC time.Time, shouldExist []slotSpec, log *slog.Logger) (created, deleted, withdrawn, restored, bookingsCancelled int, err error) {
 	// Baca semua slot dosen dalam rentang, tapi HANYA yang start_at > nowUTC.
 	// Slot masa lalu tidak disentuh sama sekali.
+	//
+	// Batas baca sengaja satu hari lebih lebar dari rentang generate
+	// (sampai to + 1 hari): slot sisa di hari ke-N, yang tidak lagi dibuat
+	// generator, harus tetap terbaca supaya bisa dibersihkan di bawah.
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, start_at, end_at, status, withdrawn_at
 		FROM slots

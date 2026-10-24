@@ -30,7 +30,8 @@ func TestHitungSlot_TepatEnam(t *testing.T) {
 	monday := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ).AddDate(0, 0, daysUntilMonday)
 
 	from := monday
-	to := monday
+	// to adalah batas atas eksklusif: hanya tanggal di bawah to yang dihitung.
+	to := monday.AddDate(0, 0, 1)
 
 	rules := []ruleRecord{
 		{
@@ -89,7 +90,7 @@ func TestHitungSlot_JendelaTakPenuh(t *testing.T) {
 	// nextMonday = tengah malam Senin berikutnya dalam zona kampus
 	monday := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ).AddDate(0, 0, daysUntilMonday)
 	from := monday
-	to := monday
+	to := monday.AddDate(0, 0, 1)
 
 	rules := []ruleRecord{
 		{
@@ -133,7 +134,7 @@ func TestHitungSlot_PengecualianFullDay(t *testing.T) {
 	// nextMonday = tengah malam Senin berikutnya dalam zona kampus
 	monday := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ).AddDate(0, 0, daysUntilMonday)
 	from := monday
-	to := monday
+	to := monday.AddDate(0, 0, 1)
 
 	rules := []ruleRecord{
 		{
@@ -190,7 +191,7 @@ func TestHitungSlot_PengecualianParsial(t *testing.T) {
 	futureNow := monday.Add(-1 * time.Hour).UTC()
 
 	from := monday
-	to := monday
+	to := monday.AddDate(0, 0, 1)
 
 	rules := []ruleRecord{
 		{
@@ -271,7 +272,7 @@ func TestHitungSlot_DenganNow(t *testing.T) {
 	// Slot 11:30 WIB = 04:30 UTC (akan ada di hasil)
 
 	from := monday
-	to := monday
+	to := monday.AddDate(0, 0, 1)
 
 	rules := []ruleRecord{
 		{
@@ -324,7 +325,7 @@ func TestHitungSlot_TakAdaSlotMasaLampau(t *testing.T) {
 	monday := time.Date(yesterdayNoonLocal.Year(), yesterdayNoonLocal.Month(), yesterdayNoonLocal.Day(), 0, 0, 0, 0, campusTZ)
 
 	from := monday
-	to := monday
+	to := monday.AddDate(0, 0, 1)
 
 	rules := []ruleRecord{
 		{
@@ -519,7 +520,7 @@ func TestHitungSlot_DuaMinggu(t *testing.T) {
 	monday2 := monday1.AddDate(0, 0, 7)
 
 	from := monday1
-	to := monday2
+	to := monday2.AddDate(0, 0, 1)
 
 	rules := []ruleRecord{
 		{
@@ -542,6 +543,17 @@ func TestHitungSlot_DuaMinggu(t *testing.T) {
 }
 
 // TestHitungSlot_TakMelampauiHorizon: slot tidak boleh melampaui horizon.
+//
+// Horizon 30 hari = rentang [hari ini 00:00, hari ini + 30 hari 00:00)
+// di zona Asia/Jakarta: 30 hari penuh, dari hari ini sampai hari ke-30.
+// Tanggal `to` (hari ke-31) TIDAK termasuk, jadi slot pada hari itu tidak
+// boleh dibuat.
+//
+// Test ini memakai "now" tetap untuk tujuh hari berturut-turut, dimulai
+// Sabtu 24 Okt 2026 siang WIB. Dulu test memakai time.Now() sehingga
+// hanya gagal kalau hari ke-N kebetulan jatuh di hari yang ada aturannya:
+// aturan hanya untuk Senin, dan hari ke-N cuma jadi Senin pada sebagian
+// hari dalam seminggu.
 func TestHitungSlot_TakMelampauiHorizon(t *testing.T) {
 	campusTZ, err := time.LoadLocation("Asia/Jakarta")
 	if err != nil {
@@ -551,34 +563,99 @@ func TestHitungSlot_TakMelampauiHorizon(t *testing.T) {
 	svc := &Service{
 		campusTZ:    campusTZ,
 		horizonDays: 30,
-		jam:         time.Now,
 	}
 
-	// Konversi ke zona kampus dulu, baru ambil komponen tanggal.
-	// Tanpa ini, midnight UTC bisa berbeda tanggal di zona kampus.
-	nowLocal := time.Now().In(campusTZ)
-	from := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, campusTZ)
-	to := from.AddDate(0, 0, 30)
+	// Aturan untuk SETIAP hari dalam seminggu, supaya hari ke-N pasti punya
+	// slot kalau batasnya salah. Dengan aturan Senin saja, batas yang salah
+	// cuma ketahuan pada satu dari tujuh hari.
+	rules := make([]ruleRecord, 0, 7)
+	for dow := 0; dow <= 6; dow++ {
+		rules = append(rules, ruleRecord{
+			dayOfWeek:       dow,
+			startTime:       time.Date(0, 1, 1, 9, 0, 0, 0, time.UTC),  // 09:00
+			endTime:         time.Date(0, 1, 1, 10, 0, 0, 0, time.UTC), // 10:00
+			slotDurationMin: 30,
+			effectiveFrom:   time.Date(2020, 1, 1, 0, 0, 0, 0, campusTZ),
+			effectiveTo:     nil,
+		})
+	}
 
-	// Aturan Senin jam 9-10, 30 menit
-	rules := []ruleRecord{
-		{
-			dayOfWeek:       1, // Senin
+	// Tujuh hari berturut-turut, dimulai Sabtu 24 Okt 2026. Jam selalu
+	// siang WIB supaya slot hari ini (09:00 dan 09:30) sudah lewat dan
+	// tidak ikut dihitung.
+	dasar := time.Date(2026, 10, 24, 12, 0, 0, 0, campusTZ)
+	for i := 0; i < 7; i++ {
+		nowTetap := dasar.AddDate(0, 0, i)
+		t.Run(nowTetap.Format("2006-01-02"), func(t *testing.T) {
+			from := time.Date(nowTetap.Year(), nowTetap.Month(), nowTetap.Day(), 0, 0, 0, 0, campusTZ)
+			to := from.AddDate(0, 0, svc.horizonDays)
+
+			slots := svc.computeShouldExist(from, to, rules, nil, nowTetap.UTC())
+
+			// Batas atas eksklusif: tidak boleh ada slot yang mulai pada
+			// tanggal `to` (hari ke-31) atau sesudahnya.
+			for _, slot := range slots {
+				if !slot.startAt.Before(to.UTC()) {
+					t.Errorf("slot melampaui horizon: start=%v, limit=%v", slot.startAt, to.UTC())
+				}
+			}
+
+			// 30 hari dalam horizon, tapi slot hari ini sudah lewat (now
+			// siang WIB): 29 hari x 2 slot = 58 slot. Slot hari ke-N tidak
+			// boleh ikut dihitung.
+			mau := (svc.horizonDays - 1) * 2
+			if len(slots) != mau {
+				t.Errorf("jumlah slot = %d, mau %d", len(slots), mau)
+			}
+		})
+	}
+}
+
+// TestHitungSlot_HariTerakhirDalamHorizonTetapAda: hari ke-30 (satu hari
+// sebelum batas atas) masih di dalam horizon, jadi harus tetap dapat slot.
+// Tanpa kasus ini, batas yang salah bisa membuat horizon jadi satu hari
+// kurang tanpa ketahuan.
+func TestHitungSlot_HariTerakhirDalamHorizonTetapAda(t *testing.T) {
+	campusTZ, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
+
+	svc := &Service{
+		campusTZ:    campusTZ,
+		horizonDays: 30,
+	}
+
+	// Now tetap: Sabtu 24 Okt 2026 siang WIB (hari yang bikin CI lama gagal).
+	nowTetap := time.Date(2026, 10, 24, 12, 0, 0, 0, campusTZ)
+	from := time.Date(nowTetap.Year(), nowTetap.Month(), nowTetap.Day(), 0, 0, 0, 0, campusTZ)
+	to := from.AddDate(0, 0, svc.horizonDays)
+
+	rules := make([]ruleRecord, 0, 7)
+	for dow := 0; dow <= 6; dow++ {
+		rules = append(rules, ruleRecord{
+			dayOfWeek:       dow,
 			startTime:       time.Date(0, 1, 1, 9, 0, 0, 0, time.UTC),
 			endTime:         time.Date(0, 1, 1, 10, 0, 0, 0, time.UTC),
 			slotDurationMin: 30,
 			effectiveFrom:   from,
 			effectiveTo:     nil,
-		},
+		})
 	}
 
-	slots := svc.computeShouldExist(from, to, rules, nil, nowLocal.UTC())
+	slots := svc.computeShouldExist(from, to, rules, nil, nowTetap.UTC())
 
-	horizonLimit := to.UTC()
+	// Hari ke-(N-1) = satu hari sebelum batas atas.
+	akhir := to.AddDate(0, 0, -1)
+	ada := false
 	for _, slot := range slots {
-		if slot.startAt.After(horizonLimit) {
-			t.Errorf("slot melampaui horizon: start=%v, limit=%v", slot.startAt, horizonLimit)
+		if !slot.startAt.Before(akhir.UTC()) && slot.startAt.Before(to.UTC()) {
+			ada = true
+			break
 		}
+	}
+	if !ada {
+		t.Errorf("tidak ada slot di hari terakhir horizon (tanggal %v)", akhir.Format("2006-01-02"))
 	}
 }
 
